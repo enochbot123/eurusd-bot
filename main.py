@@ -14,10 +14,9 @@ def run_flask():
 
 Thread(target=run_flask, daemon=True).start()
 
-TELEGRAM_TOKEN = "8529194860:AAHW1OKWBfhj69Vyy8aKZOZhDIIntmNkav4"
-TELEGRAM_CHAT_ID = "8868905914"
-POCKET_LINK = "https://pocket-friends.com/?ref=yourlink"
-
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+POCKET_LINK = os.environ.get("POCKET_LINK") or "..."
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
