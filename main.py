@@ -16,10 +16,9 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT = os.environ.get("TELEGRAM_CHAT_ID")
 LINK = os.environ.get("POCKET_LINK")
 
-# ALL PAIRS - you fit add more here
 PAIRS = {
     "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
+    "GBP/USD": "GBPUSD=X", 
     "USD/JPY": "USDJPY=X",
     "GOLD": "GC=F",
     "BTC/USD": "BTC-USD"
@@ -29,60 +28,60 @@ def send(msg):
     try:
         requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
         data={"chat_id": CHAT, "text": msg, "parse_mode": "HTML"}, timeout=15)
+        print(f"Sent: {msg[:50]}")
     except Exception as e:
         print(f"TG error: {e}")
 
 def analyze(symbol):
     try:
-        data = yf.download(symbol, period="1d", interval="5m", progress=False)
-        if len(data) < 25: return None
+        data = yf.download(symbol, period="2d", interval="5m", progress=False, auto_adjust=True)
+        if data.empty or len(data) < 20:
+            return {"signal":"ERROR", "price":0, "rsi":0, "conf":"No data"}
         close = data['Close']
+        if isinstance(close, pd.DataFrame): close = close.iloc[:,0]
         ema9 = close.ewm(span=9).mean().iloc[-1]
         ema21 = close.ewm(span=21).mean().iloc[-1]
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + gain/loss))
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
         rsi_val = float(rsi.iloc[-1])
         price = float(close.iloc[-1])
         
-        if ema9 > ema21 and 45 < rsi_val < 68:
-            return {"signal":"BUY", "price":price, "rsi":rsi_val, "conf":"HIGH" if rsi_val < 62 else "MED"}
-        elif ema9 < ema21 and 32 < rsi_val < 55:
-            return {"signal":"SELL", "price":price, "rsi":rsi_val, "conf":"HIGH" if rsi_val > 38 else "MED"}
+        if ema9 > ema21 and rsi_val > 50:
+            sig = "BUY"
+        elif ema9 < ema21 and rsi_val < 50:
+            sig = "SELL"
         else:
-            return {"signal":"WAIT", "price":price, "rsi":rsi_val, "conf":"LOW"}
-    except:
-        return None
+            sig = "WAIT"
+        conf = "HIGH" if (rsi_val < 35 or rsi_val > 65) else "MED"
+        return {"signal":sig, "price":price, "rsi":rsi_val, "conf":conf}
+    except Exception as e:
+        print(f"Analyze error {symbol}: {e}")
+        return {"signal":"ERROR", "price":0, "rsi":0, "conf":str(e)[:20]}
 
 def loop():
-    send("🚀 <b>Enoch MULTI-PAIR Bot UPGRADED!</b>\n✅ Scanning 5 Markets\n📊 EUR/USD | GBP/USD | USD/JPY | GOLD | BTC\n⏰ Every 5 mins with REAL analysis")
+    send("🚀 <b>Enoch Bot FIXED - Now Sending ALWAYS!</b>\n✅ 5 Pairs | Every 5 mins")
     while True:
         try:
             now = datetime.now(pytz.timezone("Africa/Lagos"))
-            results = []
+            lines = []
             for name, yf_symbol in PAIRS.items():
                 res = analyze(yf_symbol)
-                if res and res['signal'] != "WAIT":
-                    emoji = "🟢" if res['signal']=="BUY" else "🔴"
-                    results.append(f"{emoji} <b>{res['signal']} {name}</b>\n   💰 {res['price']:.2f} | RSI {res['rsi']:.1f} | {res['conf']}")
-                time.sleep(1)
+                if res["signal"] == "BUY": emoji = "🟢 BUY"
+                elif res["signal"] == "SELL": emoji = "🔴 SELL"
+                elif res["signal"] == "WAIT": emoji = "🟡 WAIT"
+                else: emoji = "⚠️ ERROR"
+                lines.append(f"{emoji} {name}: {res['price']:.2f} | RSI {res['rsi']:.1f}")
+                time.sleep(0.5)
             
-            if results:
-                header = f"🔥 <b>TOP SIGNALS - {now.strftime('%H:%M')} Lagos</b>\n\n"
-                footer = f"\n\n🔗 Trade: {LINK}\n⚡ Next scan in 5 mins"
-                msg = header + "\n\n".join(results) + footer
-                send(msg)
-                print(f"Sent {len(results)} signals")
-            else:
-                print(f"[{now}] No clear setup - all WAIT")
-                # Send WAIT update every 15 mins only to avoid spam
-                if now.minute % 15 == 0:
-                    send(f"⏸️ <b>Market Scanning...</b>\nNo high-confidence setup now. All pairs choppy.\n⏰ {now.strftime('%H:%M:%S')} Lagos")
-            
+            msg = f"📊 <b>MARKET SCAN - {now.strftime('%H:%M:%S')}</b>\n\n" + "\n".join(lines) + f"\n\n🔗 {LINK}\nNext in 5 mins"
+            send(msg)
             time.sleep(300)
         except Exception as e:
             print(f"Loop error: {e}")
+            send(f"⚠️ Bot error: {e}")
             time.sleep(60)
 
 loop()
