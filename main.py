@@ -6,7 +6,7 @@ from threading import Thread
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Enoch Rotation Bot LIVE!"
+def home(): return "Enoch PREPARE & ENTER Bot LIVE!"
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 Thread(target=run_flask, daemon=True).start()
@@ -15,7 +15,6 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT = os.environ.get("TELEGRAM_CHAT_ID")
 LINK = os.environ.get("POCKET_LINK")
 
-# This order e go follow - one by one
 PAIRS_LIST = [
     ("EUR/USD", "EURUSD=X"),
     ("GBP/USD", "GBPUSD=X"),
@@ -54,40 +53,68 @@ def analyze(symbol):
         return None
 
 def loop():
-    send("✅ <b>Rotation Mode ON!</b>\nOne pair every 5 mins\nWith ENTRY TIME!")
+    send("✅ <b>Bot Updated - Prepare + Enter Mode!</b>\nNow e go first tell you to SET TIME!")
     idx = 0
     while True:
         try:
             tz = pytz.timezone("Africa/Lagos")
-            now = datetime.now(tz)
-            entry = now + timedelta(minutes=1)
-            expiry = entry + timedelta(minutes=5)
-
             name, sym = PAIRS_LIST[idx]
             res = analyze(sym)
+            if not res:
+                idx = (idx + 1) % len(PAIRS_LIST)
+                time.sleep(300)
+                continue
 
-            if res:
-                if res["signal"] == "BUY": title = "🟢 BUY"
-                elif res["signal"] == "SELL": title = "🔴 SELL"
-                else: title = "🟡 WAIT"
+            now = datetime.now(tz)
+            prepare_entry = now + timedelta(minutes=1)
+            expiry = prepare_entry + timedelta(minutes=5)
 
-                msg = f"""{title} <b>{name}</b>
+            # STEP 1 - PREPARE MESSAGE (As you talk am)
+            if res["signal"] == "BUY": action = "🟢 BUY"
+            elif res["signal"] == "SELL": action = "🔴 SELL"
+            else: action = "🟡 WAIT"
 
+            prepare_msg = f"""⚠️ <b>GET READY!</b>
+
+👉 <b>SET YOUR TIME NOW!</b>
+Set your chart to <b>5 MIN timeframe</b>
+
+💱 <b>Pair wey you go trade:</b> {name}
+📊 Signal: {action}
 💰 Price: {res['price']:.2f}
+
+⏰ <b>TIME WEY YOU GO ENTER:</b>
+<b>{prepare_entry.strftime('%H:%M:%S')} Lagos</b>
+(You get 1 minute to prepare)
+
+⏳ Expiry: {expiry.strftime('%H:%M:%S')} (5 MIN)
+
+Prepare now..."""
+            send(prepare_msg)
+            print(f"Prepare sent for {name}")
+
+            # Wait 1 minute to give them time to set
+            time.sleep(60)
+
+            # STEP 2 - ENTER NOW MESSAGE
+            enter_msg = f"""🚀 <b>ENTER NOW! ENTER NOW!</b> 🚀
+
+{action} <b>{name}</b>
+
+💰 Enter Price: {res['price']:.2f}
 📊 RSI: {res['rsi']:.1f}
 
-⏰ <b>TIME TO ENTER:</b> {entry.strftime('%H:%M:%S')} Lagos
-⏳ <b>EXPIRY:</b> {expiry.strftime('%H:%M:%S')} (5 MIN)
-⏱️ Timeframe: 5 MIN
+⏰ <b>TIME TO ENTER:</b> {datetime.now(tz).strftime('%H:%M:%S')} NOW!!!
+⏳ <b>EXPIRY:</b> {(datetime.now(tz)+timedelta(minutes=5)).strftime('%H:%M:%S')} (5 MIN)
 
 🔗 Trade Here: {LINK}
 
-Next Pair: {PAIRS_LIST[(idx+1)%len(PAIRS_LIST)][0]} in 5 mins"""
-                send(msg)
-                print(f"Sent {name}")
+Next pair: {PAIRS_LIST[(idx+1)%len(PAIRS_LIST)][0]} in 4 mins"""
+            send(enter_msg)
+            print(f"Enter sent for {name}")
 
             idx = (idx + 1) % len(PAIRS_LIST)
-            time.sleep(300) # wait 5 mins before next single pair
+            time.sleep(240) # 4 mins + 1 min before = 5 mins total per pair
         except Exception as e:
             print(e)
             time.sleep(30)
