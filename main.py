@@ -1,41 +1,35 @@
-import time, random, requests
+import os, time, random, requests
 from datetime import datetime
 import pytz
+from flask import Flask
+from threading import Thread
 
-# === YOUR DETAILS ===
-TELEGRAM_TOKEN = "8529194860:AAEIYxcxtn-AINmNsODEr-oNAVZblQ-elNU"
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Enoch Bot V3 LIVE"
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+Thread(target=run_flask, daemon=True).start()
+
+TELEGRAM_TOKEN = "8529194860:AAEIYxCX"
 TELEGRAM_CHAT_ID = "8868905914"
-POCKET_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
+POCKET_LINK = "https://pocket-friends.com"
 
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
-        print("Sent:", msg)
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
     except Exception as e:
         print("Error:", e)
 
 def make_signal():
-    # Your EXACT fine format
     wat = pytz.timezone('Africa/Lagos')
-    now = datetime.now(wat).strftime("%H:%M")
-    
+    now = datetime.now(wat).strftime("%I:%M %p")
     pair = "EUR/USD"
-    side = random.choice(["BUY 🟢", "SELL 🔴"])
-    
-    if "BUY" in side:
-        direction = "🐻 DOWN" if random.random() < 0.5 else "🐂 UP"
-        # Keep it EUR/USD
-        direction = "🐂 UP" if "BUY" in side else "🐻 DOWN"
-        if "BUY" in side:
-            direction_text = "🐂 UP"
-        else:
-            direction_text = "🐻 DOWN"
-    else:
-        direction_text = "🐻 DOWN"
-
-    # Your format from yesterday:
-    msg = f"""📊Currency pair: {pair}
+    side = random.choice(["BUY 📈", "SELL 📉"])
+    direction_text = "🐂 UP" if "BUY" in side else "🐻 DOWN"
+    msg = f"""💰Currency pair: {pair}
 Direction: {direction_text}
 
 🔥 {pair} - {side}
@@ -48,9 +42,9 @@ Direction: {direction_text}
 ⚠️ Risk: 1-2% only"""
     return msg
 
-send_telegram("✅ Enoch Bot V3 don start! EUR/USD signals every 1 min go dey enter now. Format don set!")
+send_telegram("✅ Enoch Bot V3 don start for Render FREE!")
 
 while True:
     sig = make_signal()
     send_telegram(sig)
-    time.sleep(60)  # 1 min
+    time.sleep(60)
