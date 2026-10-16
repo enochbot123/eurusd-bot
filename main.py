@@ -24,9 +24,21 @@ def send_telegram(msg):
     except: pass
 
 def trading_loop():
-    send_telegram("✅ <b>Enoch Bot V3 is LIVE!</b>\n\nBot don start for Render! Signals go dey come every 5 mins...")
+    send_telegram("✅ <b>Enoch Bot V3 is LIVE and sending signals!</b>")
     while True:
         try:
+            now = datetime.now(pytz.timezone("Africa/Lagos"))
+            signals = ["BUY EUR/USD - 1 MIN", "SELL EUR/USD - 1 MIN"]
+            signal = random.choice(signals)
+            msg = f"📊 <b>{signal}</b>\n⏰ {now.strftime('%H:%M:%S')} Lagos\n🔗 Trade: {POCKET_LINK}"
+            send_telegram(msg)
+            print(f"[{now}] Sent: {signal}")
+            time.sleep(300)
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(60)
+
+trading_loop()
             now = datetime.now(pytz.timezone("Africa/Lagos")).strftime("%H:%M:%S")
             # Example signal logic - you fit change am
             signals = ["BUY EUR/USD - 1 MIN", "SELL EUR/USD - 1 MIN", "WAIT"]
