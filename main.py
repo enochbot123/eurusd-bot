@@ -40,3 +40,4 @@ def trading_loop():
 
 if __name__ == "__main__":
     trading_loop()
+    
