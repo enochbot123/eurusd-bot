@@ -1,2 +1,3 @@
-requests
-pytz
+1  python-telegram-bot
+2  requests
+3  pytz
