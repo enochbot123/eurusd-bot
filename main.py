@@ -1,75 +1,104 @@
-import os, time, requests, yfinance as yf, pandas as pd, pytz
+import os
+import time
+import requests
+import yfinance as yf
+import pandas as pd
+import pytz
 from datetime import datetime
 from flask import Flask
 import threading
 
 app = Flask(__name__)
+
 @app.route('/')
-def home(): return "Enoch Bot V7 Live!"
+def home():
+    return "Enoch Bot V7 Live - With 7AM Pause!"
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 WAT = pytz.timezone("Africa/Lagos")
 
-SYMBOLS = {"GOLD":"GC=F", "EUR/USD":"EURUSD=X", "AUD/USD":"AUDUSD=X", "USD/JPY":"JPY=X"}
+SYMBOLS = {
+    "GOLD": "GC=F",
+    "EUR/USD": "EURUSD=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/JPY": "JPY=X"
+}
 
 def send(msg):
     try:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                      data={"chat_id":CHAT_ID,"text":msg,"parse_mode":"Markdown"}, timeout=10)
-    except: pass
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
+        requests.post(url, data=data, timeout=10)
+    except Exception as e:
+        print(f"Send error: {e}")
 
-def is_bad():
-    h = datetime.now(WAT).hour
-    return h==7 or h==8
+def is_bad_hour():
+    hour = datetime.now(WAT).hour
+    return hour == 7 or hour == 8
 
-def check(symbol, ticker):
+def check_signal(name, ticker):
     try:
-        df = yf.download(ticker, period="1d", interval="1m", progress=False)
-        if len(df)<50: return
+        df = yf.download(ticker, period="1d", interval="1m", progress=False, auto_adjust=True)
+        if len(df) < 50:
+            return
         close = df['Close']
-        # RSI 14
+        
         delta = close.diff()
-        gain = delta.where(delta>0,0).rolling(14).mean()
-        loss = -delta.where(delta<0,0).rolling(14).mean()
-        rs = gain/loss
-        rsi = 100 - (100/(1+rs))
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = -delta.where(delta < 0, 0).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
         r = float(rsi.iloc[-1])
-
-        # Alligator simplified
+        
         jaw = close.rolling(13).mean().iloc[-1]
         teeth = close.rolling(8).mean().iloc[-1]
         lips = close.rolling(5).mean().iloc[-1]
+        
+        if hasattr(jaw, 'iloc'):
+            jaw = float(jaw)
+            teeth = float(teeth)
+            lips = float(lips)
+        
         price = float(close.iloc[-1])
-
-        if price>jaw and price>teeth and price>lips and r>50 and r<70:
-            send(f"🚀 *ENTER NOW!!!* {symbol} 🟢 BUY\nPrice: {price:.2f}\nRSI: {r:.1f}\n⏰ {datetime.now(WAT).strftime('%I:%M %p')}\nSet 3 MIN!")
-        elif price<jaw and price<teeth and price<lips and r<50 and r>30:
-            send(f"🔻 *ENTER NOW!!!* {symbol} 🔴 SELL\nPrice: {price:.2f}\nRSI: {r:.1f}\n⏰ {datetime.now(WAT).strftime('%I:%M %p')}\nSet 3 MIN!")
+        
+        time_now = datetime.now(WAT).strftime('%I:%M %p')
+        
+        if price > jaw and price > teeth and price > lips and r > 50 and r < 70:
+            send(f"🚀 *ENTER NOW!!!* {name} 🟢 BUY\nPrice: {price:.2f}\nRSI: {r:.1f}\n⏰ {time_now}\nSet 3 MIN!")
+        elif price < jaw and price < teeth and price < lips and r < 50 and r > 30:
+            send(f"🔻 *ENTER NOW!!!* {name} 🔴 SELL\nPrice: {price:.2f}\nRSI: {r:.1f}\n⏰ {time_now}\nSet 3 MIN!")
+            
     except Exception as e:
-        print(e)
+        print(f"Check error {name}: {e}")
 
 def bot_loop():
-    print("V7 Started")
-    paused=False
+    print("Enoch Bot V7 Started!")
+    paused_sent = False
     while True:
         try:
-            if is_bad():
-                if not paused:
-                    send("⏸️ *PAUSED* Lagos 7-9AM bad market - No signals till 9AM to protect you! 💤")
-                    paused=True
+            if is_bad_hour():
+                if not paused_sent:
+                    send(f"⏸️ *MARKET PAUSED* ⏸️\nLagos 7AM-9AM na bad market! Bot dey sleep to protect your balance. Back by 9AM! 💤")
+                    paused_sent = True
+                print(f"Paused - Bad Hour {datetime.now(WAT).strftime('%H:%M')}")
                 time.sleep(60)
                 continue
-            paused=False
-            for name,tick in SYMBOLS.items():
-                check(name,tick)
+            
+            paused_sent = False
+            
+            for name, ticker in SYMBOLS.items():
+                check_signal(name, ticker)
                 time.sleep(2)
+            
             time.sleep(30)
+            
         except Exception as e:
-            print(e)
+            print(f"Loop error: {e}")
             time.sleep(10)
 
 threading.Thread(target=bot_loop, daemon=True).start()
 
-if __name__=="__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
