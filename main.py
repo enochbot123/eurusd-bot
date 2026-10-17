@@ -1,11 +1,26 @@
 import os
+import datetime
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram.ext import Application, CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
-import datetime
 
 TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@EnochStrategyBot")
+
+# FAKE WEBSERVER TO SATISFY RENDER
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Enoch Bot is Live!")
+
+def run_server():
+    port = int(os.environ.get("PORT", 10000))
+    HTTPServer(('0.0.0.0', port), Handler).serve_forever()
+
+threading.Thread(target=run_server, daemon=True).start()
 
 async def send_warning(context: ContextTypes.DEFAULT_TYPE):
     msg = """⏰ MORNING SESSION ALERT!
@@ -17,11 +32,7 @@ Morning session will start in 10 minutes - GET READY!
 ⚡️ Enoch Strategy
 
 Stay tuned! @EnochStrategyBot"""
-    try:
-        await context.bot.send_message(chat_id=CHANNEL_ID, text=msg)
-        print("9:50 Warning sent")
-    except Exception as e:
-        print(f"Error: {e}")
+    await context.bot.send_message(chat_id=CHANNEL_ID, text=msg)
 
 async def send_morning_signal(context: ContextTypes.DEFAULT_TYPE):
     msg = """📊 EURUSD MORNING SESSION - 10AM LIVE!
@@ -29,36 +40,28 @@ async def send_morning_signal(context: ContextTypes.DEFAULT_TYPE):
 
 THIS IS NOT GAMBLING, THIS IS STRATEGY!
 
-🟢 BIAS: Waiting for London Open
+🟢 BIAS: London Open
 💡 Strategy: 10AM - 12PM Breakout
-SL: 15 pips | TP: 30 pips
-
+SL: 15 | TP: 30
 @EnochStrategyBot"""
-    try:
-        await context.bot.send_message(chat_id=CHANNEL_ID, text=msg)
-        print(f"10AM Signal sent to {CHANNEL_ID}")
-    except Exception as e:
-        print(f"Error: {e}")
+    await context.bot.send_message(chat_id=CHANNEL_ID, text=msg)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot LIVE! ✅\n9:50AM Warning + 10AM Signal set daily!\nUse /signal to test")
+    await update.message.reply_text("Bot LIVE! ✅\n9:50AM Warning + 10AM Signal daily!")
 
 async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_morning_signal(context)
-    await update.message.reply_text("✅ Manual signal posted!")
+    await update.message.reply_text("✅ Posted!")
 
 def main():
     app = Application.builder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("signal", signal))
     app.add_handler(CommandHandler("eurusd", signal))
-
-    job_queue = app.job_queue
-    # 9:50AM WAT = 8:50AM UTC
-    job_queue.run_daily(send_warning, time=datetime.time(hour=8, minute=50, second=0))
-    # 10:00AM WAT = 9:00AM UTC
-    job_queue.run_daily(send_morning_signal, time=datetime.time(hour=9, minute=0, second=0))
+    
+    jq = app.job_queue
+    jq.run_daily(send_warning, time=datetime.time(hour=8, minute=50, second=0))
+    jq.run_daily(send_morning_signal, time=datetime.time(hour=9, minute=0, second=0))
     
     print(f"BOT LIVE - 9:50 + 10AM WAT to {CHANNEL_ID}")
     app.run_polling()
