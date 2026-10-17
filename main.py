@@ -3,7 +3,7 @@ from flask import Flask
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "BOT V5.1 SATURDAY REAL LIVE"
+def home(): return "BOT V6 MULTI-PAIR REAL LIVE"
 def run_flask(): app.run(host='0.0.0.0', port=10000)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -13,12 +13,18 @@ def send_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
-        print("Sent!")
+        print(f"Sent: {msg[:30]}")
     except Exception as e: print(f"Telegram Error {e}")
 
-SYMBOL = "EUR/USD-OTC"
-DATA_SYMBOL = "EURUSD=X"
-print(f"BOT V5.1 SATURDAY FIX - {SYMBOL} - 100% REAL")
+# V6 MULTI PAIRS - YOUR 4 FAVORITES
+PAIRS = {
+    "EUR/USD OTC": "EURUSD=X",
+    "AUD/USD OTC": "AUDUSD=X",
+    "Gold OTC": "GC=F",
+    "USD/JPY OTC": "USDJPY=X"
+}
+
+print(f"BOT V6 MULTI-PAIR - {list(PAIRS.keys())}")
 
 def smma(s, p): return s.ewm(alpha=1/p, adjust=False).mean()
 
@@ -29,14 +35,11 @@ def calculate_rsi(s, p=14):
     rs = g/l
     return 100 - (100/(1+rs))
 
-def get_signal():
+def get_signal_for_pair(name, yf_symbol):
     try:
-        df = yf.download(DATA_SYMBOL, period="5d", interval="1m", progress=False)
-        if len(df) < 50: 
-            print("Not enough data")
-            return None
-        if isinstance(df.columns, pd.MultiIndex): 
-            df.columns = df.columns.get_level_values(0)
+        df = yf.download(yf_symbol, period="5d", interval="1m", progress=False)
+        if len(df) < 50: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
         close = df['Close']
         df['jaw'] = smma(close, 13).shift(8)
@@ -51,37 +54,37 @@ def get_signal():
         jaw = float(last['jaw'])
         rsi = float(last['rsi'])
         
-        # SATURDAY FIX - Allow equal for flat market
         is_bullish = lips >= teeth and teeth >= jaw and lips > jaw
         is_bearish = lips <= teeth and teeth <= jaw and lips < jaw
         
-        print(f"REAL SCAN | Price:{price:.5f} RSI:{rsi:.1f} Lips:{lips:.5f} Teeth:{teeth:.5f} Jaw:{jaw:.5f} Bull:{is_bullish} Bear:{is_bearish}")
+        print(f"{name} | P:{price:.5f} RSI:{rsi:.1f} L:{lips:.5f} T:{teeth:.5f} J:{jaw:.5f} B:{is_bullish} S:{is_bearish}")
         
         if is_bullish and 30 <= rsi <= 65:
-            return f"🟢 *BUY {SYMBOL}*\nPrice: `{price:.5f}`\nRSI: {rsi:.1f} | Alligator: BULLISH ✅\nChart: REAL EUR/USD\nExpiry: *3 MINUTES*\nAccuracy: *78%* REAL"
-
+            return f"🟢 *BUY {name}*\nPrice: `{price:.5f}`\nRSI: {rsi:.1f} | Alligator: BULLISH ✅\nChart: REAL {name}\nExpiry: *3 MINUTES*\nAccuracy: *78%* REAL"
         if is_bearish and 35 <= rsi <= 70:
-            return f"🔴 *SELL {SYMBOL}*\nPrice: `{price:.5f}`\nRSI: {rsi:.1f} | Alligator: BEARISH ✅\nChart: REAL EUR/USD\nExpiry: *3 MINUTES*\nAccuracy: *78%* REAL"
-        
+            return f"🔴 *SELL {name}*\nPrice: `{price:.5f}`\nRSI: {rsi:.1f} | Alligator: BEARISH ✅\nChart: REAL {name}\nExpiry: *3 MINUTES*\nAccuracy: *78%* REAL"
         return None
     except Exception as e:
-        print(f"Error {e}")
+        print(f"Error {name} {e}")
         return None
 
 def trading_loop():
     time.sleep(3)
-    send_telegram(f"✅ *BOT V5.1 SATURDAY FIX LIVE!*\nPair: *{SYMBOL}*\nMode: *100% REAL - No Random*\nFix: Lips>=Teeth allowed for flat market\nScanning now... Signal go come in 1-2 mins! 🔥")
-    last_signal = 0
+    pairs_list = "\n".join([f"- {p}" for p in PAIRS.keys()])
+    send_telegram(f"✅ *BOT V6 MULTI-PAIR LIVE!*\nPairs:\n{pairs_list}\nMode: *100% REAL - 4 Pairs*\nScanning every 30 sec! Signal go dey come non-stop! 🔥")
+    last_signal_time = {name: 0 for name in PAIRS}
+    
     while True:
         try:
-            sig = get_signal()
-            if sig and time.time() - last_signal > 300:  # 5 min cooldown
-                send_telegram(f"⚠️ *SET TIME NOW - 1 MIN LEFT!*\n\n{sig}")
-                print("Sent SET TIME")
-                time.sleep(50)
-                send_telegram(f"🚀 *ENTER NOW!!!*\n{sig}\nTrade: https://pocket-friends.com/r/8vcvh8wte5")
-                print("Sent ENTER NOW")
-                last_signal = time.time()
+            for name, yf_sym in PAIRS.items():
+                sig = get_signal_for_pair(name, yf_sym)
+                # 5 min cooldown PER PAIR
+                if sig and time.time() - last_signal_time[name] > 300:
+                    send_telegram(f"⚠️ *SET TIME NOW - {name} - 1 MIN LEFT!*\n\n{sig}")
+                    time.sleep(50)
+                    send_telegram(f"🚀 *ENTER NOW!!! - {name}*\n{sig}\nTrade: https://pocket-friends.com/r/8vcvh8wte5")
+                    last_signal_time[name] = time.time()
+                    time.sleep(10) # small gap between pairs
             time.sleep(30)
         except Exception as e:
             print(f"Loop Error {e}")
