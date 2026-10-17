@@ -1,60 +1,75 @@
-import os
-import time
-import requests
-import ccxt
-import pandas as pd
-import ta
+import os, time, requests, yfinance as yf, pandas as pd, pytz
 from datetime import datetime
-import pytz
+from flask import Flask
+import threading
 
-# === CONFIG ===
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Enoch Bot V7 Live!"
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-SYMBOLS = ["GOLD", "EUR/USD", "AUD/USD", "USD/JPY"]
-
 WAT = pytz.timezone("Africa/Lagos")
 
-def is_bad_hour():
-    now_wat = datetime.now(WAT)
-    hour = now_wat.hour
-    # Pause 7AM, 8AM Lagos = 7,8 hour
-    if hour in [7, 8]:
-        return True, now_wat.strftime("%I:%M %p")
-    return False, ""
+SYMBOLS = {"GOLD":"GC=F", "EUR/USD":"EURUSD=X", "AUD/USD":"AUDUSD=X", "USD/JPY":"JPY=X"}
 
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-
-def check_signal(symbol):
-    # Your Alligator + RSI logic here (same as V6)
-    # ... keep your existing logic ...
-    return True, "BUY", 28.5, 1050.50  # example
-
-print("Enoch V7 Started - With Bad Hour Filter")
-
-last_pause_msg = ""
-
-while True:
+def send(msg):
     try:
-        bad, time_str = is_bad_hour()
-        
-        if bad:
-            if last_pause_msg != time_str.split(":")[0]: # send once per hour
-                send_telegram(f"⏸️ *MARKET PAUSED* ⏸️\nBad Hour Detected: {time_str} Lagos\nNo signals till 9AM to save your balance! 💤")
-                last_pause_msg = time_str.split(":")[0]
-            time.sleep(60)
-            continue
-        
-        last_pause_msg = ""
-        
-        for sym in SYMBOLS:
-            # Your existing V6 scanning loop
-            # if signal found:
-            # send_telegram(f"🚀 ENTER NOW!!! {sym}...")
-            
-        time.sleep(10)
-        
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                      data={"chat_id":CHAT_ID,"text":msg,"parse_mode":"Markdown"}, timeout=10)
+    except: pass
+
+def is_bad():
+    h = datetime.now(WAT).hour
+    return h==7 or h==8
+
+def check(symbol, ticker):
+    try:
+        df = yf.download(ticker, period="1d", interval="1m", progress=False)
+        if len(df)<50: return
+        close = df['Close']
+        # RSI 14
+        delta = close.diff()
+        gain = delta.where(delta>0,0).rolling(14).mean()
+        loss = -delta.where(delta<0,0).rolling(14).mean()
+        rs = gain/loss
+        rsi = 100 - (100/(1+rs))
+        r = float(rsi.iloc[-1])
+
+        # Alligator simplified
+        jaw = close.rolling(13).mean().iloc[-1]
+        teeth = close.rolling(8).mean().iloc[-1]
+        lips = close.rolling(5).mean().iloc[-1]
+        price = float(close.iloc[-1])
+
+        if price>jaw and price>teeth and price>lips and r>50 and r<70:
+            send(f"🚀 *ENTER NOW!!!* {symbol} 🟢 BUY\nPrice: {price:.2f}\nRSI: {r:.1f}\n⏰ {datetime.now(WAT).strftime('%I:%M %p')}\nSet 3 MIN!")
+        elif price<jaw and price<teeth and price<lips and r<50 and r>30:
+            send(f"🔻 *ENTER NOW!!!* {symbol} 🔴 SELL\nPrice: {price:.2f}\nRSI: {r:.1f}\n⏰ {datetime.now(WAT).strftime('%I:%M %p')}\nSet 3 MIN!")
     except Exception as e:
         print(e)
-        time.sleep(10)
+
+def bot_loop():
+    print("V7 Started")
+    paused=False
+    while True:
+        try:
+            if is_bad():
+                if not paused:
+                    send("⏸️ *PAUSED* Lagos 7-9AM bad market - No signals till 9AM to protect you! 💤")
+                    paused=True
+                time.sleep(60)
+                continue
+            paused=False
+            for name,tick in SYMBOLS.items():
+                check(name,tick)
+                time.sleep(2)
+            time.sleep(30)
+        except Exception as e:
+            print(e)
+            time.sleep(10)
+
+threading.Thread(target=bot_loop, daemon=True).start()
+
+if __name__=="__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
