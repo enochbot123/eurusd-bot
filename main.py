@@ -13,7 +13,6 @@ last_set = -1
 last_enter = -1
 STATS_FILE = "stats.json"
 
-# YOUR EXACT VOICE NOTE SESSIONS
 SESSIONS = {
     "morning": {"start": dtime(10, 0), "end": dtime(11, 0), "label": "MORNING (10AM-11AM)"},
     "afternoon": {"start": dtime(13, 0), "end": dtime(14, 0), "label": "AFTERNOON (1PM-2PM)"},
@@ -76,10 +75,18 @@ def poll_telegram():
             r = requests.get(url, timeout=35).json()
             for upd in r.get("result", []):
                 last_update_id = upd["update_id"]
-                msg = upd.get("message", {}).get("text", "").lower().strip()
-                if not msg: continue
+                text = upd.get("message", {}).get("text", "")
+                if not text: continue
+                msg = text.lower().strip()
+                
+                # SUPPORT BOTH /start and stats
+                if msg in ["/start", "start", "hi", "hello"]:
+                    send(f"👋 Enoch bot ready!\n\n🌅 MORNING: 10AM-11AM\n☀️ AFTERNOON: 1PM-2PM\n🌙 EVENING: 5PM-6PM\n\nCommands:\n'stats' - see report\n'win' - record win\n'loss' - record loss\n\nCurrent date: {stats['date']}\nTotal signals today: {stats['total']}")
+                    continue
+                    
                 session = stats.get("last_session") or "afternoon"
                 if session not in SESSIONS: session = "afternoon"
+                
                 if msg in ["win", "w", "won", "+"]:
                     stats["wins"] += 1; stats["profit"] += 4.4; stats[session]["wins"] += 1; save_stats(stats)
                     s_data = stats[session]; total_s = s_data["wins"]+s_data["losses"]
@@ -90,17 +97,18 @@ def poll_telegram():
                     s_data = stats[session]; total_s = s_data["wins"]+s_data["losses"]
                     wr = (s_data["wins"]/total_s*100) if total_s>0 else 0
                     send(f"❌ LOSS - {session.upper()}\n{s_data['total']} sig | {s_data['wins']}W-{s_data['losses']}L | {wr:.1f}%")
-                elif msg in ["stats", "result", "/stats"]:
+                elif msg in ["stats", "result", "/stats", "report"]:
                     m,a,e = stats["morning"], stats["afternoon"], stats["evening"]
                     def wr2(s): t=s["wins"]+s["losses"]; return (s["wins"]/t*100) if t>0 else 0
                     send(f"📈 REPORT {stats['date']}\n━━━━━━━━━━━━━━\n🌅 MORNING 10-11AM\n{m['total']} sig | {m['wins']}W-{m['losses']}L | {wr2(m):.1f}%\n\n☀️ AFTERNOON 1-2PM\n{a['total']} sig | {a['wins']}W-{a['losses']}L | {wr2(a):.1f}%\n\n🌙 EVENING 5-6PM\n{e['total']} sig | {e['wins']}W-{e['losses']}L | {wr2(e):.1f}%\n━━━━━━━━━━━━━━\nTOTAL: {stats['total']} | {stats['wins']}W-{stats['losses']}L | ${stats['profit']:.2f}")
-        except: pass
+        except Exception as e:
+            print(f"poll error {e}")
         time.sleep(2)
 
 def loop():
     global last_set, last_enter, stats
     time.sleep(3)
-    send("✅ CORRECT SESSIONS - VOICE NOTE!\n\n🌅 MORNING: 10AM-11AM\n☀️ AFTERNOON: 1PM-2PM\n🌙 EVENING: 5PM-6PM\n\nFixed 12:60 bug! Type 'stats'")
+    send("✅ FIXED! Now /start go work!\n\nType /start to test\nType stats for report\n\nSessions: 10-11AM | 1-2PM | 5-6PM")
     while True:
         try:
             now = datetime.now(pytz.timezone("Africa/Lagos"))
@@ -113,10 +121,6 @@ def loop():
                 save_stats(stats)
             if cur_sess is None:
                 time.sleep(5); continue
-            if cm == 0 and cs < 5:
-                if now.hour == 10: send("🌅 MORNING STARTED (10AM-11AM)")
-                elif now.hour == 13: send("☀️ AFTERNOON STARTED (1PM-2PM)")
-                elif now.hour == 17: send("🌙 EVENING STARTED (5PM-6PM)")
             total_blocks = now.hour * 12 + (cm // 5)
             idx = total_blocks % len(SYMBOLS_LIST)
             if cm % 5 == 4 and last_set != cm and cs < 50:
@@ -134,7 +138,7 @@ def loop():
         time.sleep(1)
 
 @app.route("/")
-def home(): return "BOT LIVE - 10-11AM | 1-2PM | 5-6PM"
+def home(): return "BOT LIVE - FIXED /start + 10-11 | 1-2 | 5-6"
 
 threading.Thread(target=loop, daemon=True).start()
 threading.Thread(target=poll_telegram, daemon=True).start()
