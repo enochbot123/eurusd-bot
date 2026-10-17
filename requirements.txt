@@ -1,4 +1,4 @@
-Flask
 requests
-pytz
-python-telegram-bot
+yfinance
+pandas
+Flask
