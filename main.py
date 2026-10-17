@@ -14,6 +14,16 @@ app = Flask(__name__)
 def home():
     return "Enoch Bot V7 Live - With 7AM Pause!"
 
+@app.route('/test')
+def test():
+    send("✅ TEST - Telegram dey work! Bot V7 Live!")
+    return "Test message sent! Check Telegram!"
+
+@app.route('/wake')
+def wake():
+    send("⏸️ MARKET PAUSED - 7AM-9AM Lagos na bad market, bot dey sleep till 9AM! 💤")
+    return "Pause message sent!"
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 WAT = pytz.timezone("Africa/Lagos")
@@ -30,6 +40,7 @@ def send(msg):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         data = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
         requests.post(url, data=data, timeout=10)
+        print(f"Sent: {msg[:30]}")
     except Exception as e:
         print(f"Send error: {e}")
 
@@ -61,7 +72,6 @@ def check_signal(name, ticker):
             lips = float(lips)
         
         price = float(close.iloc[-1])
-        
         time_now = datetime.now(WAT).strftime('%I:%M %p')
         
         if price > jaw and price > teeth and price > lips and r > 50 and r < 70:
@@ -86,19 +96,7 @@ def bot_loop():
                 continue
             
             paused_sent = False
-            
             for name, ticker in SYMBOLS.items():
                 check_signal(name, ticker)
                 time.sleep(2)
-            
-            time.sleep(30)
-            
-        except Exception as e:
-            print(f"Loop error: {e}")
-            time.sleep(10)
-
-threading.Thread(target=bot_loop, daemon=True).start()
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+            time.sleep(
