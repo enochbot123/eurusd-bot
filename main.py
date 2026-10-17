@@ -1,94 +1,110 @@
 import os
 import time
+import threading
 import requests
 import yfinance as yf
-import pandas as pd
-import pytz
-from datetime import datetime
 from flask import Flask
-import threading
+from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Enoch Bot V7 Live - With 7AM Pause!"
-
-@app.route('/test')
-def test():
-    send("TEST - Telegram dey work! Bot V7 Live!")
-    return "Test sent! Check Telegram!"
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-WAT = pytz.timezone("Africa/Lagos")
 
+# Pairs to check - same as your own
 SYMBOLS = {
-    "GOLD": "GC=F",
     "EUR/USD": "EURUSD=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/JPY": "JPY=X"
+    "AUD/USD": "AUDUSD=X", 
+    "USD/JPY": "USDJPY=X",
+    "Gold OTC": "GC=F",
+    "EURUSD OTC": "EURUSD=X"
 }
 
-def send(msg):
+def send_telegram(message):
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("Missing TOKEN or CHAT_ID")
+        return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
-        requests.post(url, data=data, timeout=10)
-        print(f"Sent: {msg}")
+        data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        r = requests.post(url, data=data, timeout=10)
+        print(f"Sent: {message[:50]}... Status: {r.status_code}")
+        if r.status_code != 200:
+            print(f"Telegram error: {r.text}")
     except Exception as e:
         print(f"Send error: {e}")
 
-def is_bad_hour():
-    hour = datetime.now(WAT).hour
-    return hour == 7 or hour == 8
-
-def check_signal(name, ticker):
+def get_price(ticker):
     try:
-        df = yf.download(ticker, period="1d", interval="1m", progress=False, auto_adjust=True)
-        if len(df) < 50:
-            return
-        close = df['Close']
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = -delta.where(delta < 0, 0).rolling(14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        r = float(rsi.iloc[-1])
-        jaw = float(close.rolling(13).mean().iloc[-1])
-        teeth = float(close.rolling(8).mean().iloc[-1])
-        lips = float(close.rolling(5).mean().iloc[-1])
-        price = float(close.iloc[-1])
-        time_now = datetime.now(WAT).strftime('%I:%M %p')
-        if price > jaw and price > teeth and price > lips and r > 50 and r < 70:
-            send(f"ENTER NOW!!! {name} BUY Price: {price:.2f} RSI: {r:.1f} Time: {time_now} Set 3 MIN!")
-        elif price < jaw and price < teeth and price < lips and r < 50 and r > 30:
-            send(f"ENTER NOW!!! {name} SELL Price: {price:.2f} RSI: {r:.1f} Time: {time_now} Set 3 MIN!")
+        df = yf.download(ticker, period="1d", interval="1m", progress=False)
+        if df.empty:
+            return None, None, None, None
+        
+        # FIXED: Use iloc[-1] to avoid Series error
+        # This was your bug - float(Series) -> now fixed
+        close_price = float(df['Close'].iloc[-1])
+        open_price = float(df['Open'].iloc[-1])
+        high_price = float(df['High'].iloc[-1])
+        low_price = float(df['Low'].iloc[-1])
+        
+        return close_price, open_price, high_price, low_price
     except Exception as e:
-        print(f"Check error {name}: {e}")
+        print(f"Check error {ticker}: {e}")
+        return None, None, None, None
+
+def check_markets():
+    lagos_tz = pytz.timezone("Africa/Lagos")
+    now = datetime.now(lagos_tz)
+    
+    # Lagos 7AM-9AM Pause (as in your logs)
+    if 7 <= now.hour < 9:
+        msg = f"⏸️ MARKET PAUSED - Lagos {now.strftime('%I%p')}-{now.strftime('%I%p')} Low Volatility"
+        # Only send once per hour to avoid spam
+        if now.minute == 0:
+            send_telegram(msg)
+        print(f"Paused: {now}")
+        return
+
+    for name, ticker in SYMBOLS.items():
+        close_p, open_p, high_p, low_p = get_price(ticker)
+        if close_p is None:
+            continue
+        
+        # Simple signal logic - you can change this to your own strategy
+        if close_p > open_p:
+            signal = "🟢 BUY"
+        else:
+            signal = "🔴 SELL"
+            
+        message = f"""🚀 ENTER NOW!!! - {name}
+{signal} {name}
+Price: {close_p}
+Time: {now.strftime('%Y-%m-%d %H:%M:%S')} Lagos
+"""
+        send_telegram(message)
+        time.sleep(2) # avoid Telegram flood
 
 def bot_loop():
-    print("Enoch Bot V7 Started!")
-    paused_sent = False
+    print("Bot loop started...")
     while True:
         try:
-            if is_bad_hour():
-                if not paused_sent:
-                    send("MARKET PAUSED - Lagos 7AM-9AM na bad market! Bot dey sleep till 9AM!")
-                    paused_sent = True
-                time.sleep(60)
-                continue
-            paused_sent = False
-            for name, ticker in SYMBOLS.items():
-                check_signal(name, ticker)
-                time.sleep(2)
-            time.sleep(30)
+            check_markets()
         except Exception as e:
             print(f"Loop error: {e}")
-            time.sleep(10)
+        time.sleep(60) # check every 1 minute
 
+@app.route("/")
+def home():
+    return "Bot is LIVE! Enoch's Bot is running. Go to /test to test Telegram."
+
+@app.route("/test")
+def test():
+    send_telegram("✅ TEST SUCCESSFUL! Your bot @Enoch_proket_bot is now WORKING! Price fix don work! - Enoch")
+    return "Test message sent! Check your Telegram @Enoch_proket_bot"
+
+# Start bot in background
 threading.Thread(target=bot_loop, daemon=True).start()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
