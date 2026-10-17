@@ -1,6 +1,6 @@
 import os, time, threading, requests, json
 from flask import Flask
-from datetime import datetime
+from datetime import datetime, time as dtime
 import pytz
 
 app = Flask(__name__)
@@ -17,10 +17,21 @@ SYMBOLS_LIST = [
 
 last_set = -1
 last_enter = -1
-current_pair = SYMBOLS_LIST[0]
 STATS_FILE = "stats.json"
 
-# Load stats
+# YOUR CUSTOM SESSIONS
+SESSIONS = {
+    "morning": {"start": dtime(10, 0), "end": dtime(11, 0), "label": "MORNING (10AM-11AM)"},
+    "afternoon": {"start": dtime(14, 0), "end": dtime(16, 0), "label": "AFTERNOON (2PM-4PM)"},
+    "night": {"start": dtime(21, 0), "end": dtime(22, 0), "label": "NIGHT (9PM-10PM)"}
+}
+
+def get_current_session(now_time):
+    for name, s in SESSIONS.items():
+        if s["start"] <= now_time <= s["end"]:
+            return name
+    return None
+
 def load_stats():
     try:
         if os.path.exists(STATS_FILE):
@@ -28,7 +39,14 @@ def load_stats():
                 return json.load(f)
     except:
         pass
-    return {"date": str(datetime.now().date()), "total": 0, "wins": 0, "losses": 0, "profit": 0.0}
+    return {
+        "date": str(datetime.now().date()),
+        "total": 0, "wins": 0, "losses": 0, "profit": 0.0,
+        "morning": {"total": 0, "wins": 0, "losses": 0},
+        "afternoon": {"total": 0, "wins": 0, "losses": 0},
+        "night": {"total": 0, "wins": 0, "losses": 0},
+        "last_session": None
+    }
 
 def save_stats(s):
     try:
@@ -42,8 +60,7 @@ last_update_id = 0
 
 def send(msg):
     try:
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
-        data={"chat_id": CHAT, "text": msg}, timeout=15)
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": CHAT, "text": msg}, timeout=15)
     except:
         pass
 
@@ -67,16 +84,12 @@ def get_analysis(ticker):
         avg_loss = sum(losses)/14 if losses else 0.1
         rsi = 100 - (100/(1+avg_gain/avg_loss))
         if close > ema9 and rsi < 70:
-            direction = "UP"
-            reason = f"Price broke support with bullish momentum. RSI {rsi:.1f} shows buyers in control. Based on this, we enter a buy trade."
+            return "UP", f"Price broke support with bullish momentum. RSI {rsi:.1f} shows buyers in control. Based on this, we enter a buy trade."
         else:
-            direction = "DOWN"
-            reason = f"Price approached strong resistance after rapid upward move. Bearish pattern appeared. RSI {rsi:.1f} indicates overbought. Based on this, we enter a sell trade."
-        return direction, reason
+            return "DOWN", f"Price approached strong resistance after rapid upward move. RSI {rsi:.1f} overbought. Based on this, we enter a sell trade."
     except:
-        return "DOWN", "Price approached strong resistance level. Bearish signal confirmed. Based on this, we enter a sell trade."
+        return "DOWN", "Price approached strong resistance level. Bearish signal confirmed."
 
-# NEW: Track win/loss from your reply
 def poll_telegram():
     global last_update_id, stats
     while True:
@@ -87,55 +100,81 @@ def poll_telegram():
                 last_update_id = upd["update_id"]
                 msg = upd.get("message", {}).get("text", "").lower().strip()
                 if not msg: continue
+                session = stats.get("last_session") or "afternoon"
+                if session not in SESSIONS:
+                    session = "afternoon"
                 
                 if msg in ["win", "w", "won", "+"]:
                     stats["wins"] += 1
-                    stats["profit"] += 4.4 # avg profit estimate
+                    stats["profit"] += 4.4
+                    stats[session]["wins"] += 1
                     save_stats(stats)
-                    win_rate = (stats["wins"]/(stats["wins"]+stats["losses"])*100) if (stats["wins"]+stats["losses"])>0 else 0
-                    send(f"✅ WIN recorded!\n📊 Today: {stats['total']} signals\n🏆 {stats['wins']}W - {stats['losses']}L - {win_rate:.1f}% win rate")
+                    s_data = stats[session]
+                    total_s = s_data["wins"]+s_data["losses"]
+                    wr = (s_data["wins"]/total_s*100) if total_s>0 else 0
+                    send(f"✅ WIN - {session.upper()}\n{s_data['total']} sig | {s_data['wins']}W-{s_data['losses']}L | {wr:.1f}% WR")
                 elif msg in ["loss", "l", "lost", "-"]:
                     stats["losses"] += 1
                     stats["profit"] -= 5.0
+                    stats[session]["losses"] += 1
                     save_stats(stats)
-                    win_rate = (stats["wins"]/(stats["wins"]+stats["losses"])*100) if (stats["wins"]+stats["losses"])>0 else 0
-                    send(f"❌ LOSS recorded!\n📊 Today: {stats['total']} signals\n🏆 {stats['wins']}W - {stats['losses']}L - {win_rate:.1f}% win rate")
-                elif msg in ["/stats", "/result", "stats", "result"]:
-                    total_played = stats["wins"] + stats["losses"]
-                    win_rate = (stats["wins"]/total_played*100) if total_played>0 else 0
-                    send(f"📈 DAILY RESULT - {stats['date']}\n━━━━━━━━━━━━━━\n📤 Signals sent: {stats['total']}\n✅ Wins: {stats['wins']}\n❌ Losses: {stats['losses']}\n📊 Win rate: {win_rate:.1f}%\n💰 Est. Profit: ${stats['profit']:.2f}\n━━━━━━━━━━━━━━\nReply 'win' or 'loss' after each trade to track!")
-        except Exception as e:
-            print(f"Poll error: {e}")
+                    s_data = stats[session]
+                    total_s = s_data["wins"]+s_data["losses"]
+                    wr = (s_data["wins"]/total_s*100) if total_s>0 else 0
+                    send(f"❌ LOSS - {session.upper()}\n{s_data['total']} sig | {s_data['wins']}W-{s_data['losses']}L | {wr:.1f}% WR")
+                elif msg in ["/stats", "stats", "result"]:
+                    m,a,n = stats["morning"], stats["afternoon"], stats["night"]
+                    def wr(s): 
+                        t=s["wins"]+s["losses"]
+                        return (s["wins"]/t*100) if t>0 else 0
+                    send(f"📈 FULL REPORT - {stats['date']}\n━━━━━━━━━━━━━━\n🌅 MORNING 10-11AM\n{m['total']} sig | {m['wins']}W-{m['losses']}L | {wr(m):.1f}%\n\n☀️ AFTERNOON 2-4PM\n{a['total']} sig | {a['wins']}W-{a['losses']}L | {wr(a):.1f}%\n\n🌙 NIGHT 9-10PM\n{n['total']} sig | {n['wins']}W-{n['losses']}L | {wr(n):.1f}%\n━━━━━━━━━━━━━━\nTOTAL: {stats['total']} | {stats['wins']}W-{stats['losses']}L | ${stats['profit']:.2f}")
+        except:
+            pass
         time.sleep(2)
 
 def loop():
-    global last_set, last_enter, current_pair, stats
+    global last_set, last_enter, stats
     time.sleep(3)
-    send("✅ TRACKER ADDED!\n\nHow to use:\nAfter each trade, just type:\n'win' if you win\n'loss' if you lose\n\nType 'stats' anytime to see daily result!\n\nBOT NOW - 1 BY 1 ROTATION")
+    send("✅ CUSTOM SESSIONS SET!\n\n🌅 MORNING: 10AM-11AM\n☀️ AFTERNOON: 2PM-4PM\n🌙 NIGHT: 9PM-10PM\n\nBot go ONLY trade inside these 3 windows!\nOutside, e go rest!\nType 'stats' to see each session!")
     
     while True:
         try:
             now = datetime.now(pytz.timezone("Africa/Lagos"))
             cm, cs = now.minute, now.second
+            cur_sess = get_current_session(now.time())
             
-            # Reset daily at midnight
             if str(now.date()) != stats["date"]:
-                # Send final report before reset
-                total_played = stats["wins"] + stats["losses"]
-                win_rate = (stats["wins"]/total_played*100) if total_played>0 else 0
-                send(f"🌙 FINAL DAILY REPORT - {stats['date']}\n━━━━━━━━━━━━━━\n📤 Signals: {stats['total']}\n✅ Wins: {stats['wins']}\n❌ Losses: {stats['losses']}\n📊 Win rate: {win_rate:.1f}%\n💰 Profit: ${stats['profit']:.2f}\n━━━━━━━━━━━━━━\nNew day started!")
-                stats = {"date": str(now.date()), "total": 0, "wins": 0, "losses": 0, "profit": 0.0}
+                stats = {
+                    "date": str(now.date()),
+                    "total": 0, "wins": 0, "losses": 0, "profit": 0.0,
+                    "morning": {"total": 0, "wins": 0, "losses": 0},
+                    "afternoon": {"total": 0, "wins": 0, "losses": 0},
+                    "night": {"total": 0, "wins": 0, "losses": 0},
+                    "last_session": None
+                }
                 save_stats(stats)
+
+            # Only trade inside your 3 windows
+            if cur_sess is None:
+                time.sleep(5)
+                continue
+
+            # Announce session start
+            if cm == 0 and cs < 5 and now.time().minute == 0:
+                if now.time().hour == 10:
+                    send("🌅 MORNING SESSION STARTED (10AM-11AM) - Bot active!")
+                elif now.time().hour == 14:
+                    send("☀️ AFTERNOON SESSION STARTED (2PM-4PM) - Bot active!")
+                elif now.time().hour == 21:
+                    send("🌙 NIGHT SESSION STARTED (9PM-10PM) - Bot active!")
 
             total_blocks = now.hour * 12 + (cm // 5)
             idx = total_blocks % len(SYMBOLS_LIST)
-            current_pair = SYMBOLS_LIST[idx]
 
             if cm % 5 == 4 and last_set != cm and cs < 50:
                 last_set = cm
-                name = current_pair[0]
-                msg = f"❗ (UTC+1)\n\n📊 Currency pair: {name} OTC\n⏱ Expiration time: 3 min [M3]\n\n⏰ SET TIME: {now.hour:02d}:{cm+1:02d} - Prepare {name}"
-                send(msg)
+                name = SYMBOLS_LIST[idx][0]
+                send(f"❗ (UTC+1) - {cur_sess.upper()}\n\n📊 Currency pair: {name} OTC\n⏱ Expiration: 3 min [M3]\n⏰ SET: {now.hour:02d}:{cm+1:02d}")
 
             if cm % 5 == 0 and last_enter != cm and cs < 50:
                 last_enter = cm
@@ -143,13 +182,30 @@ def loop():
                 name_e, ticker_e = SYMBOLS_LIST[prev_idx]
                 direction, reason = get_analysis(ticker_e)
                 direction_text = "👻 UP" if direction == "UP" else "👻 DOWN"
-                entry_time = f"{now.hour:02d}:{cm:02d}"
                 
                 stats["total"] += 1
+                stats[cur_sess]["total"] += 1
+                stats["last_session"] = cur_sess
                 save_stats(stats)
                 
-                msg = f"Entry time: ⏰ {entry_time}\nDirection: {direction_text}\n\n➤ {reason}"
-                send(msg)
+                send(f"Entry time: ⏰ {now.hour:02d}:{cm:02d} - {cur_sess.upper()}\nDirection: {direction_text}\n\n➤ {reason}")
+
+            # Session close summary
+            if cm == 59 and cs < 5:
+                if now.time().hour == 10 and cur_sess == "morning":
+                    pass # 10:59 still morning
+                if now.time().hour == 11 and now.time().minute == 0:
+                    m=stats["morning"]
+                    wr = (m["wins"]/(m["wins"]+m["losses"])*100) if (m["wins"]+m["losses"])>0 else 0
+                    send(f"🌅 MORNING CLOSED (10-11AM)\n{m['total']} sig | {m['wins']}W-{m['losses']}L | {wr:.1f}%")
+                if now.time().hour == 16 and now.time().minute == 0:
+                    a=stats["afternoon"]
+                    wr = (a["wins"]/(a["wins"]+a["losses"])*100) if (a["wins"]+a["losses"])>0 else 0
+                    send(f"☀️ AFTERNOON CLOSED (2-4PM)\n{a['total']} sig | {a['wins']}W-{a['losses']}L | {wr:.1f}%")
+                if now.time().hour == 22 and now.time().minute == 0:
+                    n=stats["night"]
+                    wr = (n["wins"]/(n["wins"]+n["losses"])*100) if (n["wins"]+n["losses"])>0 else 0
+                    send(f"🌙 NIGHT CLOSED (9-10PM)\n{n['total']} sig | {n['wins']}W-{n['losses']}L | {wr:.1f}%")
 
         except Exception as e:
             print(e)
@@ -157,7 +213,7 @@ def loop():
 
 @app.route("/")
 def home():
-    return "BOT LIVE - WITH WIN/LOSS TRACKER"
+    return "BOT LIVE - 10-11AM | 2-4PM | 9-10PM SESSIONS ONLY"
 
 threading.Thread(target=loop, daemon=True).start()
 threading.Thread(target=poll_telegram, daemon=True).start()
