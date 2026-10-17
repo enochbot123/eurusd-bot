@@ -10,7 +10,7 @@ import pytz
 app = Flask(__name__)
 
 # ===== PUT YOUR NEW TOKEN AND ID HERE DIRECTLY =====
-TELEGRAM_TOKEN = "PASTE_YOUR_NEW_TOKEN_HERE"  # e.g. 8234567890:AAH...
+TELEGRAM_TOKEN = "8529194860:AAF4jl6EbqTtBMyU6l77KtPayQjaAs-Gv3A"  # e.g. 8234567890:AAH...
 CHAT_ID = "8868905914"   # your own ID - don change am if na still same
 # =====================================================
 
