@@ -19,38 +19,39 @@ last_enter = -1
 
 def send(msg):
     try:
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": CHAT, "text": msg}, timeout=10)
-    except:
-        pass
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+        data={"chat_id": CHAT, "text": msg}, timeout=15)
+    except Exception as e:
+        print(f"Send error: {e}")
 
 def get_real_analysis(ticker):
     try:
+        time.sleep(1.2) # To avoid Yahoo block
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, headers=headers, timeout=15)
         data = r.json()['chart']['result'][0]
         closes = [c for c in data['indicators']['quote'][0]['close'] if c is not None]
-        if len(closes) < 30:
-            return None, "BUY", 50
         
+        if len(closes) < 25:
+            return None, None, None
+            
         close = closes[-1]
-        # EMA 9 & 21
+        # EMA 9 and 21
         ema9 = sum(closes[-9:]) / 9
         ema21 = sum(closes[-21:]) / 21
-        # Simple RSI 14
-        gains = []
-        losses = []
+        
+        # RSI 14
+        gains, losses = [], []
         for i in range(1, 15):
             diff = closes[-i] - closes[-i-1]
-            if diff > 0:
-                gains.append(diff)
-            else:
-                losses.append(abs(diff))
-        avg_gain = sum(gains)/14 if gains else 0.1
-        avg_loss = sum(losses)/14 if losses else 0.1
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100/(1+rs))
+            if diff > 0: gains.append(diff)
+            else: losses.append(abs(diff))
+        avg_gain = sum(gains)/14 if gains else 0.01
+        avg_loss = sum(losses)/14 if losses else 0.01
+        rsi = 100 - (100/(1+avg_gain/avg_loss))
 
-        # REAL LOGIC
+        # DIRECTION WITH EMA + RSI
         if close > ema9 and close > ema21 and rsi > 50:
             direction = "BUY"
         elif close < ema9 and close < ema21 and rsi < 50:
@@ -60,55 +61,59 @@ def get_real_analysis(ticker):
             
         return close, direction, rsi
     except Exception as e:
-        print(f"Error {e}")
-        return None, "BUY", 55
+        print(f"Error {ticker}: {e}")
+        return None, None, None
 
 def loop():
     global last_set, last_enter
-    time.sleep(3)
-    send("✅ BOT LIVE - REAL MARKET ANALYSIS\nEvery 5 mins | Real Price + RSI + EMA\nNote: Analysis only, not 100% guarantee. Trade wisely!")
+    time.sleep(5)
+    send("✅ BOT LIVE - FINAL MODE\n📊 Real Price + RSI + EMA\n📦 1 Message = All 4 Pairs\n⏰ Every 5 Mins | Honest Analysis")
     
     while True:
         try:
             now = datetime.now(pytz.timezone("Africa/Lagos"))
             cm, cs = now.minute, now.second
 
-            if cm % 5 == 4 and last_set != cm and cs < 50:
+            # SET - 4 = :04, :09, :14, :19 etc - PREPARE ONLY
+            if cm % 5 == 4 and last_set != cm and cs < 45:
                 last_set = cm
+                lines = []
                 for name, ticker in SYMBOLS.items():
                     price, direction, rsi = get_real_analysis(ticker)
                     if price is None: continue
                     emoji = "🟢" if direction == "BUY" else "🔴"
                     pf = f"{price:.5f}" if "JPY" not in name and "Gold" not in name else f"{price:.2f}"
-                    msg = f"⚠️ SET TIME NOW - 1 MIN LEFT!\n\n{emoji} {direction} {name} OTC\n💰 Price: {pf}\n📊 RSI: {rsi:.1f} | EMA Trend\n⏰ {now.strftime('%H:%M')} WAT\n\n📌 Analysis only - Manage risk!"
+                    lines.append(f"{emoji} {direction} {name} OTC\n   💰 {pf} | RSI {rsi:.1f}")
+                
+                if lines:
+                    msg = f"⚠️ SET TIME NOW - 1 MIN LEFT!\n━━━━━━━━━━━━━━\n" + "\n\n".join(lines) + f"\n━━━━━━━━━━━━━━\n⏰ {now.strftime('%H:%M')} WAT\n📌 Analysis only - Prepare, don't click yet!"
                     send(msg)
-                    time.sleep(1)
 
-            if cm % 5 == 0 and last_enter != cm and cs < 50:
+            # ENTER - 0 = :00, :05, :10, :15 etc - CLICK NOW
+            if cm % 5 == 0 and last_enter != cm and cs < 45:
                 last_enter = cm
+                lines = []
                 for name, ticker in SYMBOLS.items():
                     price, direction, rsi = get_real_analysis(ticker)
                     if price is None: continue
                     emoji = "🟢" if direction == "BUY" else "🔴"
                     pf = f"{price:.5f}" if "JPY" not in name and "Gold" not in name else f"{price:.2f}"
-                    msg = f"🚀 ENTER NOW - 3 MINUTES!\n\n{emoji} {direction} {name} OTC\n💰 Price: {pf}\n📊 RSI: {rsi:.1f} | EMA Trend\n⏰ {now.strftime('%H:%M')} WAT\n\n📌 Analysis only - Manage risk!"
+                    lines.append(f"{emoji} {direction} {name} OTC\n   💰 {pf} | RSI {rsi:.1f}")
+
+                if lines:
+                    msg = f"🚀 ENTER NOW - 3 MINUTES!\n━━━━━━━━━━━━━━\n" + "\n\n".join(lines) + f"\n━━━━━━━━━━━━━━\n⏰ {now.strftime('%H:%M')} WAT\n📌 Click now - 3 mins expiry - Manage risk!"
                     send(msg)
-                    time.sleep(1)
+
         except Exception as e:
-            print(e)
-        time.sleep(2)
+            print(f"Loop error: {e}")
+        time.sleep(1)
 
 @app.route("/")
 def home():
-    return "BOT LIVE - REAL ANALYSIS EVERY 5 MINS"
+    return "BOT LIVE - FINAL MODE - 1 MESSAGE - REAL ANALYSIS"
+
 @app.route("/test")
 def test():
+    lines = []
     for name, ticker in SYMBOLS.items():
-        price, direction, rsi = get_real_analysis(ticker)
-        pf = f"{price:.5f}" if price else "0"
-        send(f"🧪 TEST REAL ANALYSIS\n{direction} {name} {pf} RSI {rsi:.1f}")
-        time.sleep(0.5)
-    return "Test sent!"
-
-threading.Thread(target=loop, daemon=True).start()
-app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+        price, direction, rsi = get_real
