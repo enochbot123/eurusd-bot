@@ -8,7 +8,6 @@ TOKEN = "8529194860:AAHm527qPw0etrvMP-E7fzsce8aTZm80CyQ"
 CHAT = "8868905914"
 
 SYMBOLS_LIST = [("EUR/USD", "EURUSD=X"), ("AUD/USD", "AUDUSD=X"), ("USD/JPY", "USDJPY=X"), ("GBP/JPY", "GBPJPY=X"), ("Gold", "GC=F")]
-
 last_set = -1
 last_enter = -1
 STATS_FILE = "stats.json"
@@ -28,8 +27,7 @@ def get_current_session(now_time):
 def load_stats():
     try:
         if os.path.exists(STATS_FILE):
-            with open(STATS_FILE, 'r') as f:
-                return json.load(f)
+            with open(STATS_FILE, 'r') as f: return json.load(f)
     except: pass
     return {"date": str(datetime.now().date()), "total": 0, "wins": 0, "losses": 0, "profit": 0.0,
             "morning": {"total": 0, "wins": 0, "losses": 0}, "afternoon": {"total": 0, "wins": 0, "losses": 0},
@@ -46,6 +44,44 @@ last_update_id = 0
 def send(msg):
     try: requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": CHAT, "text": msg}, timeout=15)
     except: pass
+
+# NEW PROFESSIONAL SEND WITH BUTTONS
+def send_welcome():
+    welcome_text = """🛡️ THIS IS NOT GAMBLING
+THIS IS STRATEGY 🛡️
+
+Welcome to Enoch AI Strategy Bot 🚀
+
+💚 Explore automated trading with multiple strategies, test everything on a Demo Account, and start in minutes. Simple, beginner-friendly, and supported 24/7🔥
+
+❓ What can this bot do?
+
+Don't treat investing like gambling. With the right strategy, you can earn more. I'll show you how.
+
+✅ Real Market Analysis (EMA9 + RSI)
+✅ 3 Professional Sessions
+  🌅 Morning: 10AM-11AM
+  ☀️ Afternoon: 1PM-2PM
+  🌙 Evening: 5PM-6PM
+✅ No 12:60 bug - Perfect Timing
+✅ Live Stats Tracking
+
+👇 COMMANDS:
+▶️ /start - Show this menu
+📊 stats - Daily report
+✅ win / ❌ loss - Record result
+
+Type /start anytime to see this menu.
+
+🔥 Ready? Evening session starts 5PM!"""
+
+    try:
+        # Send with Start Bot button
+        keyboard = {"inline_keyboard": [[{"text": "🚀 Start Bot - Check Stats", "callback_data": "stats"}]]}
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                      data={"chat_id": CHAT, "text": welcome_text, "reply_markup": json.dumps(keyboard)}, timeout=15)
+    except:
+        send(welcome_text)
 
 def get_analysis(ticker):
     try:
@@ -75,17 +111,25 @@ def poll_telegram():
             r = requests.get(url, timeout=35).json()
             for upd in r.get("result", []):
                 last_update_id = upd["update_id"]
+                # Handle button clicks
+                if "callback_query" in upd:
+                    data = upd["callback_query"].get("data","")
+                    if data == "stats":
+                        m,a,e = stats["morning"], stats["afternoon"], stats["evening"]
+                        def wr2(s): t=s["wins"]+s["losses"]; return (s["wins"]/t*100) if t>0 else 0
+                        send(f"📈 REPORT {stats['date']}\n━━━━━━━━━━━━━━\n🌅 MORNING 10-11AM\n{m['total']} sig | {m['wins']}W-{m['losses']}L | {wr2(m):.1f}%\n\n☀️ AFTERNOON 1-2PM\n{a['total']} sig | {a['wins']}W-{a['losses']}L | {wr2(a):.1f}%\n\n🌙 EVENING 5-6PM\n{e['total']} sig | {e['wins']}W-{e['losses']}L | {wr2(e):.1f}%\n━━━━━━━━━━━━━━\nTOTAL: {stats['total']} | {stats['wins']}W-{stats['losses']}L | ${stats['profit']:.2f}")
+                    continue
+                
                 text = upd.get("message", {}).get("text", "")
                 if not text: continue
                 msg = text.lower().strip()
                 
-                # SUPPORT BOTH /start and stats
                 if msg in ["/start", "start", "hi", "hello"]:
-                    send(f"👋 Enoch bot ready!\n\n🌅 MORNING: 10AM-11AM\n☀️ AFTERNOON: 1PM-2PM\n🌙 EVENING: 5PM-6PM\n\nCommands:\n'stats' - see report\n'win' - record win\n'loss' - record loss\n\nCurrent date: {stats['date']}\nTotal signals today: {stats['total']}")
+                    send_welcome()
                     continue
                     
-                session = stats.get("last_session") or "afternoon"
-                if session not in SESSIONS: session = "afternoon"
+                session = stats.get("last_session") or "evening"
+                if session not in SESSIONS: session = "evening"
                 
                 if msg in ["win", "w", "won", "+"]:
                     stats["wins"] += 1; stats["profit"] += 4.4; stats[session]["wins"] += 1; save_stats(stats)
@@ -101,14 +145,13 @@ def poll_telegram():
                     m,a,e = stats["morning"], stats["afternoon"], stats["evening"]
                     def wr2(s): t=s["wins"]+s["losses"]; return (s["wins"]/t*100) if t>0 else 0
                     send(f"📈 REPORT {stats['date']}\n━━━━━━━━━━━━━━\n🌅 MORNING 10-11AM\n{m['total']} sig | {m['wins']}W-{m['losses']}L | {wr2(m):.1f}%\n\n☀️ AFTERNOON 1-2PM\n{a['total']} sig | {a['wins']}W-{a['losses']}L | {wr2(a):.1f}%\n\n🌙 EVENING 5-6PM\n{e['total']} sig | {e['wins']}W-{e['losses']}L | {wr2(e):.1f}%\n━━━━━━━━━━━━━━\nTOTAL: {stats['total']} | {stats['wins']}W-{stats['losses']}L | ${stats['profit']:.2f}")
-        except Exception as e:
-            print(f"poll error {e}")
+        except: pass
         time.sleep(2)
 
 def loop():
     global last_set, last_enter, stats
     time.sleep(3)
-    send("✅ FIXED! Now /start go work!\n\nType /start to test\nType stats for report\n\nSessions: 10-11AM | 1-2PM | 5-6PM")
+    send_welcome()
     while True:
         try:
             now = datetime.now(pytz.timezone("Africa/Lagos"))
@@ -134,11 +177,11 @@ def loop():
                 direction_text = "👻 UP" if direction == "UP" else "👻 DOWN"
                 stats["total"] += 1; stats[cur_sess]["total"] += 1; stats["last_session"] = cur_sess; save_stats(stats)
                 send(f"Entry time: ⏰ {now.strftime('%H:%M')} - {cur_sess.upper()}\nDirection: {direction_text}\n\n➤ {reason}")
-        except Exception as e: print(e)
+        except: pass
         time.sleep(1)
 
 @app.route("/")
-def home(): return "BOT LIVE - FIXED /start + 10-11 | 1-2 | 5-6"
+def home(): return "BOT LIVE PROFESSIONAL - 10-11 | 1-2 | 5-6"
 
 threading.Thread(target=loop, daemon=True).start()
 threading.Thread(target=poll_telegram, daemon=True).start()
