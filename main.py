@@ -7,29 +7,36 @@ import os
 from flask import Flask
 import threading
 
-# === YOUR TELEGRAM ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", os.getenv("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN_HERE"))
 CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
-# =====================
 
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Bot is LIVE - Upgraded Strategy Active!"
+    return "Bot is LIVE - Fixed V3!"
 
 def send_telegram(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-        requests.post(url, data=data, timeout=10)
+        r = requests.post(url, data=data, timeout=10)
+        print(f"Telegram sent: {r.status_code} {r.text[:100]}")
     except Exception as e:
         print(f"Telegram error: {e}")
 
-def calculate_rsi(data, period=14):
-    close = data['Close']
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    delta = close.diff()
+def get_val(x):
+    # Force anything (Series, DataFrame, float) to single float
+    try:
+        if isinstance(x, pd.Series):
+            return float(x.iloc[0])
+        if isinstance(x, pd.DataFrame):
+            return float(x.iloc[0,0])
+        return float(x)
+    except:
+        return float('nan')
+
+def calculate_rsi(close_series, period=14):
+    delta = close_series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs = gain / loss
@@ -38,39 +45,36 @@ def calculate_rsi(data, period=14):
 
 def check_market(symbol, name, payout="92%"):
     try:
-        df = yf.download(symbol, period="1d", interval="1m", progress=False, auto_adjust=True)
+        df = yf.download(symbol, period="1d", interval="1m", progress=False, auto_adjust=True, group_by='column')
         if len(df) < 20:
             return None
         
-        # Fix yfinance multi-column issue
-        if isinstance(df['Close'], pd.DataFrame):
-            df['Close'] = df['Close'].iloc[:,0]
-            df['High'] = df['High'].iloc[:,0]
-            df['Low'] = df['Low'].iloc[:,0]
-
+        # FLATTEN if yfinance returns MultiIndex columns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        
         df['Median'] = (df['High'] + df['Low']) / 2
         df['Jaw'] = df['Median'].rolling(13).mean()
         df['Teeth'] = df['Median'].rolling(8).mean()
         df['Lips'] = df['Median'].rolling(5).mean()
-        df['RSI'] = calculate_rsi(df)
+        df['RSI'] = calculate_rsi(df['Close'])
         
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+        jaw = get_val(df['Jaw'].iloc[-1])
+        teeth = get_val(df['Teeth'].iloc[-1])
+        lips = get_val(df['Lips'].iloc[-1])
+        rsi = get_val(df['RSI'].iloc[-1])
         
-        jaw = float(last['Jaw'])
-        teeth = float(last['Teeth'])
-        lips = float(last['Lips'])
-        rsi = float(last['RSI'])
-        
+        jaw_prev = get_val(df['Jaw'].iloc[-2])
+        teeth_prev = get_val(df['Teeth'].iloc[-2])
+        lips_prev = get_val(df['Lips'].iloc[-2])
+
         if pd.isna(jaw) or pd.isna(rsi):
             return None
 
         signal = None
-        # BUY when Alligator opens upward
-        if lips > teeth > jaw and float(prev['Lips']) <= float(prev['Teeth']) and rsi < 65 and rsi > 30:
+        if lips > teeth > jaw and lips_prev <= teeth_prev and 30 < rsi < 65:
             signal = "BUY"
-        # SELL when Alligator opens downward
-        elif lips < teeth < jaw and float(prev['Lips']) >= float(prev['Teeth']) and rsi > 35 and rsi < 70:
+        elif lips < teeth < jaw and lips_prev >= teeth_prev and 35 < rsi < 70:
             signal = "SELL"
         
         if signal:
@@ -102,14 +106,14 @@ def bot_loop():
         ("USDJPY=X", "USD/JPY OTC"),
         ("AUDUSD=X", "AUD/USD OTC"),
     ]
-    send_telegram("🚀 *UPGRADED BOT IS LIVE!*\n\nStrategy: Alligator 13 8 5 + RSI Filter\nNo more random - Only high quality signals!\n\nBot will check every 2 mins...")
+    send_telegram("🚀 *BOT FIXED V3 IS LIVE!*\n\nNo more Series error! Now monitoring market for real signals...")
     
     while True:
         for symbol, name in markets:
             signal = check_market(symbol, name)
             if signal:
                 send_telegram(signal)
-                print(f"Sent: {name} - {datetime.now()}")
+                print(f"Sent: {name}")
                 time.sleep(180)
         time.sleep(120)
 
