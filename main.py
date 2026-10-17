@@ -1,101 +1,114 @@
-import os
-import time
-import threading
-import requests
-import yfinance as yf
+import os, time, threading, requests
 from flask import Flask
 from datetime import datetime
 import pytz
 
 app = Flask(__name__)
-
-TELEGRAM_TOKEN = "8529194860:AAHm527qPw0etrvMP-E7fzsce8aTZm80CyQ"
-CHAT_ID = "8868905914"
+TOKEN = "8529194860:AAHm527qPw0etrvMP-E7fzsce8aTZm80CyQ"
+CHAT = "8868905914"
 
 SYMBOLS = {
     "EUR/USD": "EURUSD=X",
     "AUD/USD": "AUDUSD=X", 
     "USD/JPY": "USDJPY=X",
-    "Gold": "XAUUSD=X"
+    "Gold": "GC=F"
 }
 
-def send_telegram(message):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": message}, timeout=10)
-        print(f"SENT: {message[:30]}")
-    except Exception as e:
-        print(e)
+last_set = -1
+last_enter = -1
 
-def get_data(ticker):
+def send(msg):
     try:
-        df = yf.download(ticker, period="1d", interval="1m", progress=False, auto_adjust=True)
-        if df.empty or len(df) < 20:
-            return None, None, None
-        close = float(df['Close'].iloc[-1])
-        open_p = float(df['Open'].iloc[-1])
-        delta = df['Close'].diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = -delta.where(delta < 0, 0).rolling(14).mean()
-        rsi = 100 - (100 / (1 + gain/loss))
-        rsi_val = float(rsi.iloc[-1]) if not rsi.empty else 55.0
-        direction = "BUY" if close > open_p else "SELL"
-        return close, rsi_val, direction
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={"chat_id": CHAT, "text": msg}, timeout=10)
     except:
-        return None, None, None
+        pass
 
-def bot_loop():
-    print("Bot started - EVERY 5 MINS MODE")
-    send_telegram("✅ Bot UPDATED - Now e go send EVERY 5 MINUTES! No filter!")
-    last_sent_minute = -1
+def get_real_analysis(ticker):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        data = r.json()['chart']['result'][0]
+        closes = [c for c in data['indicators']['quote'][0]['close'] if c is not None]
+        if len(closes) < 30:
+            return None, "BUY", 50
+        
+        close = closes[-1]
+        # EMA 9 & 21
+        ema9 = sum(closes[-9:]) / 9
+        ema21 = sum(closes[-21:]) / 21
+        # Simple RSI 14
+        gains = []
+        losses = []
+        for i in range(1, 15):
+            diff = closes[-i] - closes[-i-1]
+            if diff > 0:
+                gains.append(diff)
+            else:
+                losses.append(abs(diff))
+        avg_gain = sum(gains)/14 if gains else 0.1
+        avg_loss = sum(losses)/14 if losses else 0.1
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100/(1+rs))
+
+        # REAL LOGIC
+        if close > ema9 and close > ema21 and rsi > 50:
+            direction = "BUY"
+        elif close < ema9 and close < ema21 and rsi < 50:
+            direction = "SELL"
+        else:
+            direction = "BUY" if close > ema9 else "SELL"
+            
+        return close, direction, rsi
+    except Exception as e:
+        print(f"Error {e}")
+        return None, "BUY", 55
+
+def loop():
+    global last_set, last_enter
+    time.sleep(3)
+    send("✅ BOT LIVE - REAL MARKET ANALYSIS\nEvery 5 mins | Real Price + RSI + EMA\nNote: Analysis only, not 100% guarantee. Trade wisely!")
     
     while True:
         try:
-            lagos = pytz.timezone("Africa/Lagos")
-            now = datetime.now(lagos)
+            now = datetime.now(pytz.timezone("Africa/Lagos"))
+            cm, cs = now.minute, now.second
 
-            # EVERY 5 MINUTES: SET at :04, :09, :14, :19, :24, :29, :34, :39, :44, :49, :54, :59
-            if now.minute % 5 == 4 and 0 <= now.second <= 20:
-                if last_sent_minute != now.minute:
-                    for name, ticker in SYMBOLS.items():
-                        price, rsi, direction = get_data(ticker)
-                        if price is None: continue
-                        emoji = "🟢" if direction == "BUY" else "🔴"
-                        price_f = f"{price:.5f}" if "JPY" not in name and "Gold" not in name else f"{price:.2f}"
-                        msg = f"⚠️ SET TIME NOW 1 MIN LEFT!\n\n{emoji} {direction} {name} OTC Price {price_f} RSI {rsi:.1f} REAL 3 MIN"
-                        send_telegram(msg)
-                        time.sleep(1)
-                    last_sent_minute = now.minute
+            if cm % 5 == 4 and last_set != cm and cs < 50:
+                last_set = cm
+                for name, ticker in SYMBOLS.items():
+                    price, direction, rsi = get_real_analysis(ticker)
+                    if price is None: continue
+                    emoji = "🟢" if direction == "BUY" else "🔴"
+                    pf = f"{price:.5f}" if "JPY" not in name and "Gold" not in name else f"{price:.2f}"
+                    msg = f"⚠️ SET TIME NOW - 1 MIN LEFT!\n\n{emoji} {direction} {name} OTC\n💰 Price: {pf}\n📊 RSI: {rsi:.1f} | EMA Trend\n⏰ {now.strftime('%H:%M')} WAT\n\n📌 Analysis only - Manage risk!"
+                    send(msg)
+                    time.sleep(1)
 
-            # EVERY 5 MINUTES: ENTER at :00, :05, :10, :15, :20, :25, :30, :35, :40, :45, :50, :55
-            if now.minute % 5 == 0 and 0 <= now.second <= 20:
-                if last_sent_minute != now.minute:
-                    for name, ticker in SYMBOLS.items():
-                        price, rsi, direction = get_data(ticker)
-                        if price is None: continue
-                        emoji = "🟢" if direction == "BUY" else "🔴"
-                        price_f = f"{price:.5f}" if "JPY" not in name and "Gold" not in name else f"{price:.2f}"
-                        msg = f"🚀 ENTER NOW!!!\n{emoji} {direction} {name} OTC Price {price_f} RSI {rsi:.1f} REAL 3 MIN"
-                        send_telegram(msg)
-                        time.sleep(1)
-                    last_sent_minute = now.minute
-
+            if cm % 5 == 0 and last_enter != cm and cs < 50:
+                last_enter = cm
+                for name, ticker in SYMBOLS.items():
+                    price, direction, rsi = get_real_analysis(ticker)
+                    if price is None: continue
+                    emoji = "🟢" if direction == "BUY" else "🔴"
+                    pf = f"{price:.5f}" if "JPY" not in name and "Gold" not in name else f"{price:.2f}"
+                    msg = f"🚀 ENTER NOW - 3 MINUTES!\n\n{emoji} {direction} {name} OTC\n💰 Price: {pf}\n📊 RSI: {rsi:.1f} | EMA Trend\n⏰ {now.strftime('%H:%M')} WAT\n\n📌 Analysis only - Manage risk!"
+                    send(msg)
+                    time.sleep(1)
         except Exception as e:
-            print(f"Error: {e}")
-        time.sleep(5)
+            print(e)
+        time.sleep(2)
 
 @app.route("/")
 def home():
-    return "Bot LIVE - Every 5 Mins"
-
+    return "BOT LIVE - REAL ANALYSIS EVERY 5 MINS"
 @app.route("/test")
 def test():
-    send_telegram("⚠️ SET TIME NOW 1 MIN LEFT!\n\n🟢 BUY EUR/USD OTC Price 1.12435 RSI 60.9 REAL 3 MIN")
-    time.sleep(1)
-    send_telegram("🚀 ENTER NOW!!!\n🟢 BUY EUR/USD OTC Price 1.12435 RSI 60.9 REAL 3 MIN")
+    for name, ticker in SYMBOLS.items():
+        price, direction, rsi = get_real_analysis(ticker)
+        pf = f"{price:.5f}" if price else "0"
+        send(f"🧪 TEST REAL ANALYSIS\n{direction} {name} {pf} RSI {rsi:.1f}")
+        time.sleep(0.5)
     return "Test sent!"
 
-threading.Thread(target=bot_loop, daemon=True).start()
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+threading.Thread(target=loop, daemon=True).start()
+app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
