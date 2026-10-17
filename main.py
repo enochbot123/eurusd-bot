@@ -8,7 +8,7 @@ from flask import Flask
 import threading
 
 # === YOUR TELEGRAM ===
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", os.getenv("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN_HERE"))
 CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
 # =====================
 
@@ -26,7 +26,10 @@ def send_telegram(message):
         print(f"Telegram error: {e}")
 
 def calculate_rsi(data, period=14):
-    delta = data['Close'].diff()
+    close = data['Close']
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs = gain / loss
@@ -35,36 +38,39 @@ def calculate_rsi(data, period=14):
 
 def check_market(symbol, name, payout="92%"):
     try:
-        # Get 1min data
-        df = yf.download(symbol, period="1d", interval="1m", progress=False)
+        df = yf.download(symbol, period="1d", interval="1m", progress=False, auto_adjust=True)
         if len(df) < 20:
             return None
         
-        # Alligator: 13, 8, 5 SMA on median price
+        # Fix yfinance multi-column issue
+        if isinstance(df['Close'], pd.DataFrame):
+            df['Close'] = df['Close'].iloc[:,0]
+            df['High'] = df['High'].iloc[:,0]
+            df['Low'] = df['Low'].iloc[:,0]
+
         df['Median'] = (df['High'] + df['Low']) / 2
-        df['Jaw'] = df['Median'].rolling(13).mean()  # Blue
-        df['Teeth'] = df['Median'].rolling(8).mean() # Red
-        df['Lips'] = df['Median'].rolling(5).mean()   # Green
+        df['Jaw'] = df['Median'].rolling(13).mean()
+        df['Teeth'] = df['Median'].rolling(8).mean()
+        df['Lips'] = df['Median'].rolling(5).mean()
         df['RSI'] = calculate_rsi(df)
         
         last = df.iloc[-1]
         prev = df.iloc[-2]
         
-        jaw = last['Jaw']
-        teeth = last['Teeth']
-        lips = last['Lips']
-        rsi = last['RSI']
+        jaw = float(last['Jaw'])
+        teeth = float(last['Teeth'])
+        lips = float(last['Lips'])
+        rsi = float(last['RSI'])
         
-        # Skip if indicators not ready
         if pd.isna(jaw) or pd.isna(rsi):
             return None
 
         signal = None
-        # STRONG UPTREND: Lips > Teeth > Jaw + RSI not overbought
-        if lips > teeth > jaw and prev['Lips'] <= prev['Teeth'] and rsi < 65 and rsi > 30:
+        # BUY when Alligator opens upward
+        if lips > teeth > jaw and float(prev['Lips']) <= float(prev['Teeth']) and rsi < 65 and rsi > 30:
             signal = "BUY"
-        # STRONG DOWNTREND: Lips < Teeth < Jaw + RSI not oversold  
-        elif lips < teeth < jaw and prev['Lips'] >= prev['Teeth'] and rsi > 35 and rsi < 70:
+        # SELL when Alligator opens downward
+        elif lips < teeth < jaw and float(prev['Lips']) >= float(prev['Teeth']) and rsi > 35 and rsi < 70:
             signal = "SELL"
         
         if signal:
@@ -104,13 +110,11 @@ def bot_loop():
             if signal:
                 send_telegram(signal)
                 print(f"Sent: {name} - {datetime.now()}")
-                time.sleep(180)  # Wait 3 mins after a signal to avoid spam
-        time.sleep(120)  # Check every 2 mins
+                time.sleep(180)
+        time.sleep(120)
 
 if __name__ == "__main__":
-    # Start bot in background
     t = threading.Thread(target=bot_loop, daemon=True)
     t.start()
-    # Start flask to keep Render alive
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
