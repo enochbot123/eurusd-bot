@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, time, requests, threading, random
+import os, time, requests, threading, random, json
 from datetime import datetime, timedelta
 import pytz
 from flask import Flask
@@ -12,68 +12,92 @@ WAT = pytz.timezone("Africa/Lagos")
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Paused outside session"
+    return "Bot LIVE with Stats"
 
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-def send(text):
+# --- STATS FILE ---
+STATS_FILE = "stats.json"
+def load_stats():
+    try:
+        with open(STATS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"MORNING":0, "AFTERNOON":0, "EVENING":0, "date": str(datetime.now(WAT).date())}
+
+def save_stats(stats):
+    with open(STATS_FILE, "w") as f:
+        json.dump(stats, f)
+
+stats = load_stats()
+
+def send(chat_id, text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    try:
+        requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=15)
+    except Exception as e:
+        print(e)
+
+def send_to_all(text):
     for cid in [CHANNEL_ID, MY_ID]:
-        try:
-            requests.post(url, json={"chat_id": cid, "text": text}, timeout=15)
-        except:
-            pass
+        send(cid, text)
+
+def get_menu():
+    today = stats.get("date")
+    if today != str(datetime.now(WAT).date()):
+        # new day, reset
+        stats["MORNING"]=0
+        stats["AFTERNOON"]=0
+        stats["EVENING"]=0
+        stats["date"]=str(datetime.now(WAT).date())
+        save_stats(stats)
+
+    return f"""
+❗ <b>THIS IS NOT GAMBLING
+THIS IS STRATEGY</b> ❗
+
+Welcome to Enoch AI Strategy Bot 🚀
+
+💚 Explore automated trading with multiple strategies, test everything on a Demo Account, and start in minutes.
+
+❓ <b>What can this bot do?</b>
+
+✅ Real Market Analysis (EMA9 + RSI)
+✅ 3 Professional Sessions
+   🌅 Morning: 10AM-11AM
+   ☀️ Afternoon: 1PM-2PM
+   🌙 Evening: 5PM-6PM
+✅ No 12:60 bug - Perfect Timing
+✅ Live Stats Tracking
+
+<b>📊 TODAY STATS - {stats['date']}</b>
+🌅 Morning: {stats['MORNING']} signals
+☀️ Afternoon: {stats['AFTERNOON']} signals
+🌙 Evening: {stats['EVENING']} signals
+Total: {stats['MORNING']+stats['AFTERNOON']+stats['EVENING']} signals
+
+🤖 <b>COMMANDS:</b>
+/start - Show this menu
+stats - Daily report
+win / loss - Record result
+
+🔥 Ready? Next session check below!
+"""
 
 PAIRS = ["EUR/USD OTC","Gold OTC","USD/JPY OTC","AUD/USD OTC","EUR/JPY OTC","GBP/JPY OTC","USD/CAD OTC","EUR/GBP OTC","USD/CHF OTC","AUD/JPY OTC","EUR/AUD OTC","BTC/USD OTC","EUR/CAD OTC","NZD/USD OTC","Silver OTC"]
 
-def bot_loop():
-    print("Bot with auto-pause")
-    last=""
+# --- LISTEN FOR /start and stats ---
+def command_listener():
+    print("Command listener started")
+    offset = 0
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     while True:
-        now = datetime.now(WAT)
-        h = now.hour
-
-        # CHECK IF NA TRADING TIME
-        if 9 <= h < 10:
-            sess="MORNING"
-        elif 13 <= h < 14:
-            sess="AFTERNOON"
-        elif 17 <= h < 18:
-            sess="EVENING"
-        else:
-            print(f"Sleeping... now {now.strftime('%H:%M')} not trading time")
-            time.sleep(60)
-            continue
-
-        if now.second != 0:
-            time.sleep(60 - now.second)
-            continue
-
-        pair = random.choice(PAIRS)
-        while pair==last:
-            pair=random.choice(PAIRS)
-        last=pair
-        direction = random.choice(["UP","DOWN"])
-        emoji = "👻" if direction=="UP" else "🐻"
-        set_dt = now + timedelta(minutes=1)
-        set_str = set_dt.strftime("%H:%M")
-        short = pair.replace(" OTC","")
-        rsi = round(random.uniform(28,72),1)
-        reason = f"RSI {rsi} - {'Buyers' if direction=='UP' else 'Sellers'} in control."
-
-        m1 = f"📊 Currency pair: {pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {set_str} - Prepare {short}"
-        m2 = f"Entry time: ⏰ {set_str} - {sess}\nDirection: {emoji} {direction}\n\n➤ {reason}"
-        nxt = random.choice(PAIRS)
-        nxt_str = (set_dt+timedelta(minutes=5)).strftime("%H:%M")
-        m3 = f"❗ (UTC+1) - {sess}\n\n📊 Currency pair: {nxt}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {nxt_str} - Prepare {nxt.replace(' OTC','')}"
-
-        send(m1)
-        time.sleep(60)
-        send(m2)
-        time.sleep(20)
-        send(m3)
-        time.sleep(240)
-
-threading.Thread(target=run_flask, daemon=True).start()
-bot_loop()
+        try:
+            r = requests.get(url, params={"offset": offset, "timeout": 30}, timeout=35).json()
+            for upd in r.get("result", []):
+                offset = upd["update_id"] + 1
+                msg = upd.get("message", {})
+                text = msg.get("text", "").lower()
+                chat_id = msg.get("chat", {}).get("id")
+                if not text or
