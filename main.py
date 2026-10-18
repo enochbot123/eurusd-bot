@@ -16,7 +16,7 @@ WAT = pytz.timezone("Africa/Lagos")
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Enoch Bot LIVE - Final Code"
+    return "Bot Live Fixed"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -29,25 +29,17 @@ def send(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     for chat_id in [CHANNEL_ID, MY_PRIVATE_ID]:
         try:
-            r = requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=15)
-            print(f"Sent to {chat_id} -> {r.status_code}")
+            requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=15)
+            print(f"Sent to {chat_id}")
         except Exception as e:
             print(f"Error {chat_id}: {e}")
 
 def get_analysis(direction):
     rsi = round(random.uniform(28, 72), 1)
     if direction == "UP":
-        return random.choice([
-            f"Price broke support with bullish momentum. RSI {rsi} shows buyers in control. Based on this, we enter a buy trade.",
-            f"Bullish engulfing detected. RSI {rsi} confirms reversal. Buyers taking over.",
-            f"Support holding firm. RSI {rsi} indicates uptrend continuation. We enter BUY."
-        ])
+        return f"Price broke support with bullish momentum. RSI {rsi} shows buyers in control. Based on this, we enter a buy trade."
     else:
-        return random.choice([
-            f"Price rejected at resistance with bearish momentum. RSI {rsi} shows sellers in control. Based on this, we enter a sell trade.",
-            f"Double top formation. RSI {rsi} shows overbought. Sellers stepping in.",
-            f"Shooting star at resistance. RSI {rsi} confirms downtrend. We enter SELL."
-        ])
+        return f"Price rejected at resistance with bearish momentum. RSI {rsi} shows sellers in control. Based on this, we enter a sell trade."
 
 STRONG_PAIRS = [
     "EUR/USD OTC",
@@ -68,12 +60,10 @@ STRONG_PAIRS = [
 ]
 
 def bot_loop():
-    print("Bot started - Final timing + bear emoji")
+    print("Bot started - FIXED SYNTAX")
     last_pair = ""
     while True:
         now = datetime.now(WAT)
-
-        # SYNC TIME - make e no rush, wait till new minute start
         if now.second != 0:
             time.sleep(60 - now.second)
             continue
@@ -84,20 +74,40 @@ def bot_loop():
         last_pair = pair
 
         direction = random.choice(["UP", "DOWN"])
-        
-        # EMOJI - SECOND ONE WEY YOU CHOOSE = BEAR
         if direction == "UP":
-            emoji = "👻"
+            emoji = "ghost"
         else:
-            emoji = "🐻"
+            emoji = "bear"
 
         set_dt = now + timedelta(minutes=1)
         set_str = set_dt.strftime("%H:%M")
 
         hour = set_dt.hour
-        session = "MORNING" if 5 <= hour < 12 else "AFTERNOON" if 12 <= hour < 17 else "EVENING"
+        if 5 <= hour < 12:
+            session = "MORNING"
+        elif 12 <= hour < 17:
+            session = "AFTERNOON"
+        else:
+            session = "EVENING"
 
         reason = get_analysis(direction)
         short_name = pair.replace(" OTC","")
 
-        msg1 = f"📊 Currency pair: {pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {set_str} - Prepare {short_name
+        # FIXED - No more broken string
+        msg1 = f"Currency pair: {pair} | Expiration: 3 min [M3] | SET: {set_str} - Prepare {short_name}"
+        msg2 = f"Entry time: {set_str} - {session} | Direction: {emoji} {direction} | {reason}"
+        next_pair = random.choice(STRONG_PAIRS)
+        next_dt = set_dt + timedelta(minutes=5)
+        next_str = next_dt.strftime("%H:%M")
+        msg3 = f"(UTC+1) - {session} | Currency pair: {next_pair} | Expiration: 3 min [M3] | SET: {next_str} - Prepare {next_pair.replace(' OTC','')}"
+
+        print(f"SENDING {pair} {direction}")
+        send(msg1)
+        time.sleep(60)
+        send(msg2)
+        time.sleep(20)
+        send(msg3)
+        time.sleep(240)
+
+threading.Thread(target=run_flask, daemon=True).start()
+bot_loop()
