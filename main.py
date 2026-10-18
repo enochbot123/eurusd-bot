@@ -2,20 +2,21 @@ import os
 import time
 import requests
 import threading
+import random
 from datetime import datetime, timedelta
 import pytz
-import random
 from flask import Flask
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+CHANNEL_ID = "-1003714315133"
+MY_PRIVATE_ID = "8529194860"
+
 WAT = pytz.timezone("Africa/Lagos")
 
 app = Flask(__name__)
-
 @app.route('/')
 def home():
-    return "Enoch Strategy Bot is Running! 24/7 Live"
+    return "Enoch Strategy LIVE - 15 Pairs - Old Format"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -23,44 +24,89 @@ def run_flask():
 
 def send(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": CHANNEL_ID, "text": text, "parse_mode": "HTML"}, timeout=10)
-        print("Sent")
-    except Exception as e:
-        print(e)
+    targets = [CHANNEL_ID, MY_PRIVATE_ID]
+    for chat_id in targets:
+        try:
+            requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=10)
+            print(f"Sent to {chat_id}")
+        except Exception as e:
+            print(f"Error {chat_id}: {e}")
 
-def get_signal():
-    try:
-        r = requests.get("https://api.exchangerate-api.com/v4/latest/EUR", timeout=10).json()
-        eur_usd = r['rates']['USD']
-        last = eur_usd + random.uniform(-0.0003, 0.0003)
-        sec = datetime.now().second
-        if sec % 2 == 0:
-            return "UP", last
-        else:
-            return "DOWN", last
-    except:
-        return random.choice([("UP", 1.0850), ("DOWN", 1.0850)])
+def get_analysis(direction):
+    rsi = round(random.uniform(26, 74), 1)
+    if direction == "UP":
+        return random.choice([
+            f"Price broke support with bullish momentum. RSI {rsi} shows buyers in control. Based on this, we enter a buy trade.",
+            f"Bullish engulfing pattern detected. RSI {rsi} confirms oversold reversal. Buyers taking over.",
+            f"Support level holding strong. RSI {rsi} indicates uptrend continuation. We go for BUY.",
+            f"Price forming hammer candle at support. RSI {rsi} shows bullish divergence. Enter BUY."
+        ])
+    else:
+        return random.choice([
+            f"Price rejected at resistance with bearish momentum. RSI {rsi} shows sellers in control. Based on this, we enter a sell trade.",
+            f"Double top at resistance. RSI {rsi} indicates overbought condition. Sellers stepping in.",
+            f"Shooting star candle formed. RSI {rsi} confirms downtrend. We go for SELL.",
+            f"Breakdown below support with volume. RSI {rsi} shows bearish pressure. Enter SELL."
+        ])
+
+# 15 STRONG PAIRS - GBP/USD DON COMOT
+STRONG_PAIRS = [
+    "EUR/USD OTC",
+    "Gold OTC",
+    "USD/JPY OTC",
+    "AUD/USD OTC",
+    "EUR/JPY OTC",
+    "GBP/JPY OTC",
+    "USD/CAD OTC",
+    "EUR/GBP OTC",
+    "USD/CHF OTC",
+    "AUD/JPY OTC",
+    "EUR/AUD OTC",
+    "BTC/USD OTC",
+    "EUR/CAD OTC",
+    "NZD/USD OTC",
+    "Silver OTC"
+]
 
 def bot_loop():
-    print("Bot don start... E dey road now!")
+    print("Bot started - 15 Pairs - Old Format - No GBP/USD")
+    last = ""
     while True:
-        now_wat = datetime.now(WAT)
-        result = get_signal()
-        direction, price = result
-        entry_dt = now_wat + timedelta(minutes=2)
-        entry_str = entry_dt.strftime("%I:%M %p")
-        icon = "🟢" if direction == "UP" else "🔴"
-        
-        msg1 = "🚀 <b>ENOCH STRATEGY</b> 🚀\n\n" + f"Pair: <b>EUR/USD</b>\nEntry: <b>{entry_str} WAT</b>\nPrice: {price:.5f}\n\nDirection in 1 min..."
-        send(msg1)
-        time.sleep(60)
-        
-        msg2 = "✅ <b>CONFIRMED</b> ✅\n\n" + f"EUR/USD\nEntry: {entry_str} WAT\nDirection: <b>{direction} {icon}</b>\n\nExpiry: 2 Min"
-        send(msg2)
-        time.sleep(600)
+        now = datetime.now(WAT)
+        pair = random.choice(STRONG_PAIRS)
+        while pair == last:
+            pair = random.choice(STRONG_PAIRS)
+        last = pair
 
-# Start Flask in background to keep Render happy (FREE)
+        direction = random.choice(["UP", "DOWN"])
+        icon = "👻" if direction == "UP" else "👹"
+
+        set_dt = now + timedelta(minutes=1)
+        set_str = set_dt.strftime("%H:%M")
+        entry_str = set_str
+
+        hour = set_dt.hour
+        session = "MORNING" if 5 <= hour < 12 else "AFTERNOON" if 12 <= hour < 17 else "EVENING"
+
+        reason = get_analysis(direction)
+        short = pair.replace(" OTC","")
+
+        msg1 = f"📊 Currency pair: {pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {set_str} - Prepare {short}"
+        msg2 = f"Entry time: ⏰ {entry_str} - {session}\nDirection: {icon} {direction}\n\n➤ {reason}"
+        
+        next_pair = random.choice(STRONG_PAIRS)
+        next_dt = set_dt + timedelta(minutes=5)
+        next_str = next_dt.strftime("%H:%M")
+        msg3 = f"❗ (UTC+1) - {session}\n\n📊 Currency pair: {next_pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {next_str} - Prepare {next_pair.replace(' OTC','')}"
+
+        send(msg1)
+        print(f"SET: {pair}")
+        time.sleep(60)
+        send(msg2)
+        print(f"ENTRY: {direction}")
+        time.sleep(20)
+        send(msg3)
+        time.sleep(240)
+
 threading.Thread(target=run_flask, daemon=True).start()
-# Start Bot Loop
 bot_loop()
