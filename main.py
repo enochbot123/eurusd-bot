@@ -1,104 +1,81 @@
 import os
-import datetime
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram.ext import Application, CommandHandler
-from telegram import Update
-from telegram.ext import ContextTypes
+import time
+import yfinance as yf
+import requests
+from datetime import datetime, timedelta
+import pytz
 
-TOKEN = os.environ.get("BOT_TOKEN")
-_raw_channel = os.environ.get("CHANNEL_ID", "@EnochStrategyBot")
-# Convert -100... to int if possible
-try:
-    CHANNEL_ID = int(_raw_channel) if _raw_channel.lstrip('-').isdigit() else _raw_channel
-except:
-    CHANNEL_ID = _raw_channel
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-print(f"Starting with CHANNEL_ID: {CHANNEL_ID} type: {type(CHANNEL_ID)}", flush=True)
+WAT = pytz.timezone("Africa/Lagos")
 
-# FAKE SERVER FOR RENDER
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Enoch 3-Session Bot Live!")
-
-def run_server():
-    port = int(os.environ.get("PORT", 10000))
-    print(f"Fake server on {port}", flush=True)
-    HTTPServer(('0.0.0.0', port), Handler).serve_forever()
-
-threading.Thread(target=run_server, daemon=True).start()
-
-# --- MESSAGES ---
-async def warn_morning(c):
+def send(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        await c.bot.send_message(CHANNEL_ID, "⏰ MORNING SESSION in 10 mins!\n🕘 10:00AM WAT - GET READY!\n📊 EURUSD Loading...\n@EnochStrategyBot")
+        requests.post(url, json={"chat_id": CHANNEL_ID, "text": text, "parse_mode": "HTML"})
+        print("Sent:", text)
     except Exception as e:
-        print(f"warn_morning error: {e}", flush=True)
+        print(e)
 
-async def signal_morning(c):
+def get_real_signal():
     try:
-        await c.bot.send_message(CHANNEL_ID, "📊 EURUSD MORNING - 10AM LIVE!\n🚀 London Open Started!\n🟢 BIAS: Breakout\nSL:15 | TP:30\nThis is not gambling, this is strategy!\n@EnochStrategyBot")
+        # Use 1min chart for real entry
+        data = yf.download("EURUSD=X", period="1d", interval="1m", progress=False)
+        if len(data) < 50:
+            return None
+        
+        close = data['Close']
+        # Simple EMA strategy for real signal
+        ema9 = close.ewm(span=9).mean().iloc[-1]
+        ema21 = close.ewm(span=21).mean().iloc[-1]
+        last = float(close.iloc[-1])
+
+        if ema9 > ema21 and last > ema9:
+            return "UP", last
+        elif ema9 < ema21 and last < ema9:
+            return "DOWN", last
+        else:
+            return None
     except Exception as e:
-        print(f"signal_morning error: {e}", flush=True)
+        print(e)
+        return None
 
-async def warn_afternoon(c):
-    try:
-        await c.bot.send_message(CHANNEL_ID, "⏰ AFTERNOON SESSION in 10 mins!\n🕑 2:00PM WAT - GET READY!\n📊 EURUSD Overlap\n@EnochStrategyBot")
-    except Exception as e:
-        print(f"warn_afternoon error: {e}", flush=True)
+# MAIN LOOP - Make e dey run
+while True:
+    now_wat = datetime.now(WAT)
+    print(f"Checking... {now_wat}")
 
-async def signal_afternoon(c):
-    try:
-        await c.bot.send_message(CHANNEL_ID, "📊 EURUSD AFTERNOON - 2PM LIVE!\n🔥 London/NY Overlap Started!\n🟢 BIAS: Continuation\nSL:15 | TP:30\n@EnochStrategyBot")
-    except Exception as e:
-        print(f"signal_afternoon error: {e}", flush=True)
-
-async def warn_evening(c):
-    try:
-        await c.bot.send_message(CHANNEL_ID, "⏰ EVENING SESSION in 10 mins!\n🕖 7:00PM WAT - GET READY!\n📊 EURUSD NY Close\n@EnochStrategyBot")
-    except Exception as e:
-        print(f"warn_evening error: {e}", flush=True)
-
-async def signal_evening(c):
-    try:
-        await c.bot.send_message(CHANNEL_ID, "📊 EURUSD EVENING - 7PM LIVE!\n🌙 NY Evening Started!\n🟢 BIAS: Reversal/Range\nSL:15 | TP:30\n@EnochStrategyBot")
-    except Exception as e:
-        print(f"signal_evening error: {e}", flush=True)
-
-# COMMANDS
-async def start(u,c): 
-    await u.message.reply_text("✅ Bot LIVE! 3 Sessions:\n9:50/10AM Morning\n1:50/2PM Afternoon\n6:50/7PM Evening")
-
-async def sig(u,c): 
-    await signal_morning(c)
-    await u.message.reply_text(f"Posted to {CHANNEL_ID}!")
-
-def main():
-    if not TOKEN:
-        print("ERROR: BOT_TOKEN missing!", flush=True)
-        return
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("signal", sig))
+    result = get_real_signal()
     
-    jq = app.job_queue
-    if jq is None:
-        print("ERROR: job_queue is None! Install python-telegram-bot[job-queue]", flush=True)
-        # Still run without jobs so /signal works
-    else:
-        # Morning WAT = UTC-1 => 10AM WAT = 9AM UTC
-        jq.run_daily(warn_morning, time=datetime.time(8,50))
-        jq.run_daily(signal_morning, time=datetime.time(9,0))
-        jq.run_daily(warn_afternoon, time=datetime.time(12,50))
-        jq.run_daily(signal_afternoon, time=datetime.time(13,0))
-        jq.run_daily(warn_evening, time=datetime.time(17,50))
-        jq.run_daily(signal_evening, time=datetime.time(18,0))
-        print("Jobs scheduled", flush=True)
-    
-    print(f"BOT LIVE - 3 SESSIONS to {CHANNEL_ID}", flush=True)
-    app.run_polling()
+    if result:
+        direction, price = result
+        
+        # Set entry time for next 2 minutes (so people go get ready)
+        entry_time_dt = now_wat + timedelta(minutes=2)
+        entry_time_str = entry_time_dt.strftime("%I:%M %p")
 
-if __name__ == "__main__": 
-    main()
+        # 1st Message: Entry Time + Pair
+        msg1 = f"""
+🚀 <b>ENOCH STRATEGY - REAL SIGNAL</b> 🚀
+
+💰 Pair: <b>EUR/USD</b>
+⏰ Entry Time: <b>{entry_time_str} WAT</b>
+📊 Price Now: {price:.5f}
+
+Get ready... Direction dey come in 1 min 👇
+"""
+        send(msg1)
+        
+        # Wait 60 seconds then send direction
+        time.sleep(60)
+
+        msg2 = f"""
+✅ <b>DIRECTION CONFIRMED</b> ✅
+
+💰 EUR/USD
+⏰ Entry: {entry_time_str} WAT
+📈 Direction: <b>{direction} {'🟢' if direction=='UP' else '🔴'}</b>
+
+Expiry: 1 Minute
+Risk: 1% only - No
