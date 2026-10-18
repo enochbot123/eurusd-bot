@@ -16,40 +16,39 @@ WAT = pytz.timezone("Africa/Lagos")
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Enoch Strategy LIVE - 15 Pairs - Old Format"
+    return "Enoch Bot LIVE - Final Code"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
 def send(text):
+    if not BOT_TOKEN:
+        print("BOT_TOKEN missing!")
+        return
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    targets = [CHANNEL_ID, MY_PRIVATE_ID]
-    for chat_id in targets:
+    for chat_id in [CHANNEL_ID, MY_PRIVATE_ID]:
         try:
-            requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=10)
-            print(f"Sent to {chat_id}")
+            r = requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=15)
+            print(f"Sent to {chat_id} -> {r.status_code}")
         except Exception as e:
             print(f"Error {chat_id}: {e}")
 
 def get_analysis(direction):
-    rsi = round(random.uniform(26, 74), 1)
+    rsi = round(random.uniform(28, 72), 1)
     if direction == "UP":
         return random.choice([
             f"Price broke support with bullish momentum. RSI {rsi} shows buyers in control. Based on this, we enter a buy trade.",
-            f"Bullish engulfing pattern detected. RSI {rsi} confirms oversold reversal. Buyers taking over.",
-            f"Support level holding strong. RSI {rsi} indicates uptrend continuation. We go for BUY.",
-            f"Price forming hammer candle at support. RSI {rsi} shows bullish divergence. Enter BUY."
+            f"Bullish engulfing detected. RSI {rsi} confirms reversal. Buyers taking over.",
+            f"Support holding firm. RSI {rsi} indicates uptrend continuation. We enter BUY."
         ])
     else:
         return random.choice([
             f"Price rejected at resistance with bearish momentum. RSI {rsi} shows sellers in control. Based on this, we enter a sell trade.",
-            f"Double top at resistance. RSI {rsi} indicates overbought condition. Sellers stepping in.",
-            f"Shooting star candle formed. RSI {rsi} confirms downtrend. We go for SELL.",
-            f"Breakdown below support with volume. RSI {rsi} shows bearish pressure. Enter SELL."
+            f"Double top formation. RSI {rsi} shows overbought. Sellers stepping in.",
+            f"Shooting star at resistance. RSI {rsi} confirms downtrend. We enter SELL."
         ])
 
-# 15 STRONG PAIRS - GBP/USD DON COMOT
 STRONG_PAIRS = [
     "EUR/USD OTC",
     "Gold OTC",
@@ -69,44 +68,36 @@ STRONG_PAIRS = [
 ]
 
 def bot_loop():
-    print("Bot started - 15 Pairs - Old Format - No GBP/USD")
-    last = ""
+    print("Bot started - Final timing + bear emoji")
+    last_pair = ""
     while True:
         now = datetime.now(WAT)
+
+        # SYNC TIME - make e no rush, wait till new minute start
+        if now.second != 0:
+            time.sleep(60 - now.second)
+            continue
+
         pair = random.choice(STRONG_PAIRS)
-        while pair == last:
+        while pair == last_pair:
             pair = random.choice(STRONG_PAIRS)
-        last = pair
+        last_pair = pair
 
         direction = random.choice(["UP", "DOWN"])
-        icon = "👻" if direction == "UP" else "👹"
+        
+        # EMOJI - SECOND ONE WEY YOU CHOOSE = BEAR
+        if direction == "UP":
+            emoji = "👻"
+        else:
+            emoji = "🐻"
 
         set_dt = now + timedelta(minutes=1)
         set_str = set_dt.strftime("%H:%M")
-        entry_str = set_str
 
         hour = set_dt.hour
         session = "MORNING" if 5 <= hour < 12 else "AFTERNOON" if 12 <= hour < 17 else "EVENING"
 
         reason = get_analysis(direction)
-        short = pair.replace(" OTC","")
+        short_name = pair.replace(" OTC","")
 
-        msg1 = f"📊 Currency pair: {pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {set_str} - Prepare {short}"
-        msg2 = f"Entry time: ⏰ {entry_str} - {session}\nDirection: {icon} {direction}\n\n➤ {reason}"
-        
-        next_pair = random.choice(STRONG_PAIRS)
-        next_dt = set_dt + timedelta(minutes=5)
-        next_str = next_dt.strftime("%H:%M")
-        msg3 = f"❗ (UTC+1) - {session}\n\n📊 Currency pair: {next_pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {next_str} - Prepare {next_pair.replace(' OTC','')}"
-
-        send(msg1)
-        print(f"SET: {pair}")
-        time.sleep(60)
-        send(msg2)
-        print(f"ENTRY: {direction}")
-        time.sleep(20)
-        send(msg3)
-        time.sleep(240)
-
-threading.Thread(target=run_flask, daemon=True).start()
-bot_loop()
+        msg1 = f"📊 Currency pair: {pair}\n⏰ Expiration: 3 min [M3]\n⏰ SET: {set_str} - Prepare {short_name
