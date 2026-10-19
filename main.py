@@ -15,10 +15,9 @@ MY_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
 WAT = pytz.timezone("Africa/Lagos")
 
 app = Flask(__name__)
-
 @app.route('/')
 def home():
-    return "Enoch System LIVE"
+    return "Enoch System LIVE - No Double"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -68,30 +67,36 @@ def listen_commands():
                     continue
                 low = text.lower()
                 if "/start" in low or "start signals" in low:
-                    alert = "NEW PERSON PRESS START! Name: {} Username: @{} ID: {} Chat: tg://user?id={}".format(first_name, user_name, chat_id, chat_id)
+                    # ALERT FOR YOU - ONCE
+                    alert = "NEW PERSON!\nName: {}\nUsername: @{}\nID: {}".format(first_name, user_name, chat_id)
                     send(MY_ID, alert)
-                    welcome = "THIS IS NOT GAMBLING THIS IS STRATEGY Hello {} Welcome to Enoch System! Use buttons below: REGISTER HERE - Get link, My Trading ID - Get ID, How it works - Guide. Admin @Enochsystem will message you soon!".format(first_name)
+                    # WELCOME - PROFESSIONAL - ONCE ONLY!
+                    welcome = "🚀 <b>THIS IS NOT GAMBLING</b>\n<b>THIS IS STRATEGY</b>\n\nHello {} 👋\n\nWelcome to <b>Enoch System!</b>\n\n💼 Professional Trading Hub\n📊 Signals: 10AM | 1PM | 5PM UTC\n✅ 3Min Expiry | Strategy-Based\n\nUse buttons below:\n🔗 REGISTER HERE - Get link\n🆔 My Trading ID - Send ID\nℹ️ How it works - Guide\n\nAdmin @Enochsystem dey online!".format(first_name)
                     send(chat_id, welcome, reply_markup=PRO_KEYBOARD)
+
                 elif "how it works" in low:
-                    txt = "HOW IT WORKS 1. Press REGISTER HERE 2. Fund $10 3. Send screenshot to @Enochsystem 4. Get VIP Channel Sessions: 10AM-11AM, 1PM-2PM, 5PM-6PM"
+                    txt = "ℹ️ <b>HOW IT WORKS</b>\n\n1️⃣ Press REGISTER HERE\n2️⃣ Fund $10\n3️⃣ Send screenshot to @Enochsystem\n4️⃣ Get VIP Channel\n\n⏰ Sessions: 10AM | 1PM | 5PM UTC"
                     send(chat_id, txt, reply_markup=PRO_KEYBOARD)
+
                 elif "my trading id" in low:
-                    txt = "How to get Trading ID 1. Login Pocket Option 2. Go Profile Copy ID 3. Send to @Enochsystem"
+                    txt = "🆔 <b>How to get Trading ID</b>\n\n1️⃣ Login Pocket Option\n2️⃣ Go to Profile\n3️⃣ Copy your ID\n4️⃣ Send to @Enochsystem"
                     send(chat_id, txt, reply_markup=PRO_KEYBOARD)
+
                 elif "register here" in low:
-                    txt = "REGISTER HERE Use my official link: {} After register: Fund $10 Send ID to @Enochsystem VIP access!".format(MY_LINK)
+                    txt = "🔗 <b>REGISTER HERE</b>\n\nUse my official link:\n{}\n\nAfter register:\n✅ Fund $10\n✅ Send ID to @Enochsystem\n\n🎉 VIP access!".format(MY_LINK)
                     send(chat_id, txt, reply_markup=PRO_KEYBOARD)
+
                 elif "chat" in low:
-                    send(chat_id, "Chat Admin: @Enochsystem He dey online!", reply_markup=PRO_KEYBOARD)
-        except Exception as e:
-            print("Error")
+                    send(chat_id, "💬 Chat Admin: @Enochsystem\nHe dey online!", reply_markup=PRO_KEYBOARD)
+
+        except Exception:
             time.sleep(5)
         time.sleep(2)
 
 def bot_loop():
     time.sleep(10)
     last = ""
-    send(MY_ID, "Bot LIVE Final Fixed No Fail!")
+    send(MY_ID, "Bot LIVE - One Message Mode!")
     while True:
         try:
             now = datetime.now(WAT)
@@ -119,10 +124,8 @@ def bot_loop():
             m1 = "Currency pair: {} Expiration: 3 min [M3] SET: {} - Prepare {}".format(pair, set_str, short)
             m2 = "Entry time: {} - {} Direction: {} Analysis: Price broke support".format(set_str, sess, direction)
             send(CHANNEL_ID, m1)
-            send(MY_ID, m1)
             time.sleep(60)
             send(CHANNEL_ID, m2)
-            send(MY_ID, m2)
             time.sleep(240)
         except Exception:
             time.sleep(10)
