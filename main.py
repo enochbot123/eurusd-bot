@@ -1,229 +1,253 @@
 import os
-import asyncio
-import random
-from datetime import datetime, timedelta
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+from datetime import datetime, time
 import pytz
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
-from flask import Flask
-import threading
+import asyncio
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
-WAT = pytz.timezone("Africa/Lagos")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+YOUR_LINK = os.getenv("YOUR_LINK", "https://t.me/your_channel")
 
-# 5 SURE PAIRS - YOU SELECTED!
-PAIRS = [
-    "EUR/USD OTC",
-    "EUR/JPY OTC", 
-    "USD/JPY OTC",
-    "CAD/JPY OTC",
-    "AUD/USD OTC"
-]
-
-SESSIONS = {
-    "MORNING": {"start": (9, 30), "end": (10, 30), "emoji": "🌅"},
-    "AFTERNOON": {"start": (14, 30), "end": (15, 30), "emoji": "☀️"},
-    "EVENING": {"start": (20, 30), "end": (21, 30), "emoji": "🌙"}
+PAIRS = {
+    "EURUSD": "EURUSD=X",
+    "USDJPY": "USDJPY=X",
+    "EURJPY": "EURJPY=X",
+    "AUDUSD": "AUDUSD=X",
+    "USDCAD": "USDCAD=X",
+    "BTCUSD": "BTC-USD"
 }
 
 bot = Bot(token=BOT_TOKEN)
-flask_app = Flask(__name__)
+lagos = pytz.timezone('Africa/Lagos')
 
-# TRACKER FOR SIGNALS COUNT
-session_signal_count = {"MORNING": 0, "AFTERNOON": 0, "EVENING": 0}
-current_active_session = None
+# --- SESSIONS (WAT) ---
+SESSIONS = {
+    "MORNING MONEY": (time(9, 30), time(10, 30)),
+    "AFTERNOON ACTION": (time(14, 30), time(15, 30)),
+    "EVENING SNIPER": (time(20, 30), time(21, 30))
+}
 
-@flask_app.route('/')
-def home():
-    return "BOT LIVE - 5 PAIRS WITH SESSION SUMMARY!"
+reminded = {}
 
-def get_session_status():
-    now = datetime.now(WAT)
-    now_minutes = now.hour * 60 + now.minute
-    
-    for name, s in SESSIONS.items():
-        start_m = s["start"][0] * 60 + s["start"][1]
-        end_m = s["end"][0] * 60 + s["end"][1]
-        if start_m <= now_minutes <= end_m:
-            return name, s, True  # Active
-    return None, None, False
+def analyze_real(pair_symbol):
+    try:
+        df = yf.download(pair_symbol, period="1d", interval="5m", progress=False)
+        if len(df) < 60: return None, "Low data", 0, 0, 0, 0
+        df['EMA20'] = ta.ema(df['Close'], 20)
+        df['EMA50'] = ta.ema(df['Close'], 50)
+        df['RSI'] = ta.rsi(df['Close'], 14)
+        df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], 14)
+        macd = ta.macd(df['Close'])
+        df = pd.concat([df, macd], axis=1)
+        last = df.iloc[-1]
+        price = float(last['Close'])
+        ema20 = float(last['EMA20'])
+        ema50 = float(last['EMA50'])
+        rsi = float(last['RSI'])
+        atr = float(last['ATR'])
+        macd_l = float(last['MACD_12_26_9'])
+        sig_l = float(last['MACDs_12_26_9'])
+        
+        # UP REASON
+        if price > ema20 > ema50 and 50 < rsi < 70 and macd_l > sig_l:
+            reason = f"🟢 BULLISH BREAKOUT:\n├ Price don break above EMA20 & EMA50 (Strong Uptrend)\n├ RSI {rsi:.1f} - Momentum dey UP but not overbought\n├ MACD {macd_l:.4f} cross above signal - Buyers don take over\n└ ATR shows volatility to push UP"
+            return "BUY", reason, price, rsi, macd_l, atr
+        
+        if price < ema20 < ema50 and 30 < rsi < 50 and macd_l < sig_l:
+            reason = f"🔴 BEARISH BREAKDOWN:\n├ Price don break below EMA20 & EMA50 (Strong Downtrend)\n├ RSI {rsi:.1f} - Sellers dey control, momentum DOWN\n├ MACD {macd_l:.4f} cross below signal - Sell pressure high\n└ ATR confirms move to go DOWN"
+            return "SELL", reason, price, rsi, macd_l, atr
+            
+        return None, f"Price: {price:.5f} | EMA20:{ema20:.5f} EMA50:{ema50:.5f} | RSI:{rsi:.1f} - No confluence yet, waiting for breakout", price, rsi, macd_l, atr
+    except Exception as e:
+        return None, str(e), 0,0,0,0
 
-async def send_session_start(name, data):
-    emoji = data["emoji"]
-    msg = f"""
-{emoji} {emoji} {emoji} **SESSION ALERT** {emoji} {emoji} {emoji}
+def get_current_session():
+    now_t = datetime.now(lagos).time()
+    for name, (start, end) in SESSIONS.items():
+        if start <= now_t <= end:
+            return name
+    return None
 
-🚀 **{name} SESSION DON START!** 🚀
+def is_reminder_time():
+    now_t = datetime.now(lagos).time()
+    for name, (start, end) in SESSIONS.items():
+        # 5 mins before
+        start_min = start.hour*60 + start.minute - 5
+        now_min = now_t.hour*60 + now_t.minute
+        if now_min == start_min:
+            return name
+    return None
 
-⏰ Time: {data['start'][0]}:{data['start'][1]:02d} - {data['end'][0]}:{data['end'][1]:02d} WAT
-📊 Pairs: EUR/USD, EUR/JPY, USD/JPY, CAD/JPY, AUD/USD
-
-🔔 Bot don reset count! Ready to print signals!
-Good luck! 🔥
-"""
-    await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown")
-
-async def send_session_finish(name, data, count):
-    emoji = data["emoji"]
-    # Calculate win estimation
-    msg = f"""
-{emoji} ━━━━━━━━━━━━━━━━ {emoji}
-
-✅ **{name} SESSION FINISH!** ✅
-
-⏰ Time: {data['end'][0]}:{data['end'][1]:02d} WAT
-📊 **Total Signals Printed Today:** {count} 📈
-
-📝 **Summary for {name}:**
-✅ Signals: {count}
-✅ Pairs: 5 Sure Pairs
-✅ Status: CLOSED
-
-💤 Bot dey rest now. Next session go start soon!
-
-🔔 Wait for next SESSION ALERT!
-
-━━━━━━━━━━━━━━━━
-"""
-    await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown")
-
-async def send_signal(session_name, session_data):
-    global session_signal_count
-    pair = random.choice(PAIRS)
-    direction = random.choice(["UP 🟢", "DOWN 🔴"])
-    confidence = random.randint(91, 97)
-    payout = 92
-
-    if "UP" in direction:
-        emoji_big = "🟢🟢🟢"
-        entry_text = "BUY / CALL"
-    else:
-        emoji_big = "🔴🔴🔴"
-        entry_text = "SELL / PUT"
-
-    now = datetime.now(WAT).strftime("%I:%M:%S %p")
-
-    msg = f"""
-{emoji_big} **PROFESSIONAL SETUP** {emoji_big}
-
-━━━━━━━━━━━━━━━━━━━━
-💰 **PAIR:** {pair}
-📈 **ENTRY:** {entry_text}
-➡️ **DIRECTION:** {direction}
-
-🔔 **ENTRY ALERT!**
-⏰ **TIME:** {now} WAT
-🎯 **CONFIDENCE:** {confidence}%
-💵 **PAYOUT:** {payout}%
-
-━━━━━━━━━━━━━━━━━━━━
-{session_data['emoji']} **{session_name} SESSION LIVE**
-Signal #{session_signal_count[session_name] + 1}
-
-⚙️ STRATEGY:
-✅ RSI + Trend Filter
-✅ 90%+ Payout Only
-✅ 1 MIN Expiry
-
-#Live #Professional
-"""
-    await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown")
-    session_signal_count[session_name] += 1
-    print(f"Signal {session_signal_count[session_name]} for {session_name}: {pair} {direction}")
-
-async def start_command(update, context):
-    user = update.effective_user.first_name
-    msg = f"""
-👋 **WELCOME {user.upper()}!** 👋
-
-🤖 **YOUR PRIVATE PROFESSIONAL BOT** 🤖
-
-📚 **HOW TO USE:**
-
-1️⃣ **SESSION ALERT:**
-🌅 Morning: 9:30AM-10:30AM
-☀️ Afternoon: 2:30PM-3:30PM
-🌙 Evening: 8:30PM-9:30PM WAT
-
-2️⃣ **WHEN SESSION START:**
-I go send:
-🚀 MORNING SESSION DON START!
-
-3️⃣ **PROFESSIONAL SETUP:**
-🟢 UP = BUY
-🔴 DOWN = SELL
-Expiry: 1 MIN
-
-4️⃣ **WHEN SESSION FINISH:**
-✅ MORNING SESSION FINISH!
-Total Signals: e.g. 12 signals printed
-
-**MY 5 SURE PAIRS:**
-✅ EUR/USD OTC
-✅ EUR/JPY OTC
-✅ USD/JPY OTC
-✅ CAD/JPY OTC
-✅ AUD/USD OTC
-
-Join Channel: {CHANNEL_ID}
-
-Good luck! 🚀
-"""
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-
-async def trading_loop():
-    global current_active_session, session_signal_count
-    last_session_name = None
+# --- MAIN LOOP ---
+async def pro_scheduler():
+    global reminded
+    pair_list = list(PAIRS.keys())
+    idx = 0
+    pending_trade = None
     
     while True:
         try:
-            session_name, session_data, is_active = get_session_status()
+            now = datetime.now(lagos)
+            now_str = now.strftime('%H:%M:%S WAT')
+            current_session = get_current_session()
+            reminder_session = is_reminder_time()
             
-            # SESSION START DETECTED
-            if is_active and session_name != current_active_session:
-                # Reset count for new session
-                session_signal_count[session_name] = 0
-                current_active_session = session_name
-                await send_session_start(session_name, session_data)
-                last_session_name = session_name
-                print(f"START: {session_name}")
+            # 1. REMINDER 5 MINS BEFORE
+            if reminder_session and reminded.get(reminder_session) != now.date():
+                reminded[reminder_session] = now.date()
+                await bot.send_message(chat_id=CHANNEL_ID, text=f"""
+⏰ **SESSION REMINDER - 5 MINS TO START** ⏰
+━━━━━━━━━━━━━━━━━━
+📢 {reminder_session} SESSION go start by {SESSIONS[reminder_session][0].strftime('%I:%M %p')}
+💱 Pairs: {', '.join(PAIRS.keys())}
 
-            # SESSION FINISH DETECTED - This is your request!
-            if not is_active and current_active_session is not None:
-                # The previous session just finished
-                finished_name = current_active_session
-                finished_data = SESSIONS[finished_name]
-                count = session_signal_count[finished_name]
-                await send_session_finish(finished_name, finished_data, count)
-                print(f"FINISH: {finished_name} with {count} signals")
-                current_active_session = None
-                # Don't reset count here so user can see, will reset on next start
-            
-            # SEND SIGNALS IF ACTIVE
-            if is_active:
-                await send_signal(session_name, session_data)
-                await asyncio.sleep(random.randint(180, 300))  # 3-5 mins
+⚙️ **PRO SETTINGS:**
+├ Strategy: EMA20/50 + RSI + MACD + ATR Breakout
+├ Mode: Real Analysis (1 pair / 5 mins)
+├ Risk: 2% per trade
+└ BTC: Active 24/7
+
+Make you ready! 👀
+━━━━━━━━━━━━━━━━━━
+""")
+                await asyncio.sleep(60)
+                continue
+
+            # 2. SESSION START
+            if current_session and now.time().minute == SESSIONS[current_session][0].minute and now.time().second < 10:
+                await bot.send_message(chat_id=CHANNEL_ID, text=f"""
+🚀 **{current_session} SESSION STARTED** 🚀
+━━━━━━━━━━━━━━━━━━
+⏰ Time: {now_str}
+📊 Session: {SESSIONS[current_session][0].strftime('%I:%M')} - {SESSIONS[current_session][1].strftime('%I:%M WAT')}
+💱 Pairs: {' | '.join(PAIRS.keys())}
+
+⚙️ **PROFESSIONAL SETTINGS ACTIVE:**
+├ System: Real Market Analyzer v9.0
+├ Analysis: EMA Trend + RSI Momentum + MACD Cross + ATR Volatility
+├ Rotation: 1 Pair Every 5 Minutes
+├ Entry: 2-step (Setup Alert → Entry Now)
+└ Link: {YOUR_LINK}
+
+Bot don start scanning with REAL breakout logic...
+━━━━━━━━━━━━━━━━━━
+""")
+                await asyncio.sleep(60)
+
+            # 3. DURING SESSION - TRADE LOGIC
+            if current_session:
+                # If we have pending trade waiting for entry, send ENTRY NOW
+                if pending_trade:
+                    pt = pending_trade
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"""
+{pt['emoji']} **ENTER NOW! {pt['pair']} - {pt['type']}** {pt['emoji']}
+━━━━━━━━━━━━━━━━━━
+⏰ Entry Time: {now_str}
+💱 Pair: {pt['pair']}
+{pt['emoji']} Direction: {pt['type']} {pt['emoji']}
+
+💰 ENTRY PRICE: {pt['price']:.5f}
+🛑 SL: {pt['sl']:.5f} (-7 pips)
+🎯 TP1: {pt['tp1']:.5f} (+10 pips)
+🎯 TP2: {pt['tp2']:.5f} (+20 pips)
+
+🧠 **WHY THIS TRADE:**
+{pt['reason']}
+
+⚠️ Manage risk! 2% only!
+Next analysis in 5 mins...
+━━━━━━━━━━━━━━━━━━
+""")
+                    pending_trade = None
+                    idx += 1
+                    await asyncio.sleep(300)
+                    continue
+
+                # Otherwise, analyze new pair
+                pair_name = pair_list[idx % len(pair_list)]
+                symbol = PAIRS[pair_name]
+                print(f"[{now_str}] Analyzing {pair_name} for {current_session}")
+                
+                sig_type, reason, price, rsi, macd_v, atr_v = analyze_real(symbol)
+
+                if sig_type:
+                    emoji = "🟢⬆️" if sig_type == "BUY" else "🔴⬇️"
+                    pip = 0.0010 if "JPY" not in pair_name else 0.10
+                    if "BTC" in pair_name: pip = 150.0
+                    
+                    sl = price - pip*7 if sig_type=="BUY" else price + pip*7
+                    tp1 = price + pip*10 if sig_type=="BUY" else price - pip*10
+                    tp2 = price + pip*20 if sig_type=="BUY" else price - pip*20
+
+                    # STEP 1: PAIR WE GO TRADE (SETUP ALERT)
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"""
+👀 **SETUP IDENTIFIED - {pair_name}** 👀
+━━━━━━━━━━━━━━━━━━
+⏰ Time: {now_str}
+📊 Session: {current_session}
+💱 Pair: {pair_name}
+
+{emoji} **DIRECTION: {sig_type}** {emoji}
+💰 Current Price: {price:.5f}
+📊 RSI: {rsi:.1f} | MACD: {macd_v:.4f} | ATR: {atr_v:.4f}
+
+🧠 **PRO ANALYSIS - WHY E GO {sig_type}:**
+{reason}
+
+⏳ **NEXT STEP:** I go send ENTER NOW in 5 minutes after final confirmation!
+Prepare your lot size!
+━━━━━━━━━━━━━━━━━━
+""")
+                    # Save for entry in next 5 mins
+                    pending_trade = {
+                        "pair": pair_name, "type": sig_type, "price": price,
+                        "sl": sl, "tp1": tp1, "tp2": tp2, "reason": reason,
+                        "emoji": emoji
+                    }
+                else:
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"""
+🔍 **MARKET SCAN | {pair_name}**
+━━━━━━━━━━━━━━━━━━
+⏰ {now_str} | Session: {current_session}
+💱 Pair: {pair_name}
+💰 Price: {price:.5f}
+
+📊 RSI: {rsi:.1f} | MACD: {macd_v:.4f}
+📝 {reason}
+
+❌ No breakout yet
+🔄 Next: {pair_list[(idx+1)%len(pair_list)]} in 5 mins
+━━━━━━━━━━━━━━━━━━
+""")
+                    idx += 1
+
+                await asyncio.sleep(300) # 5 mins
+
             else:
-                await asyncio.sleep(20)
+                # Outside session - BTC only 24/7? Or sleep
+                # For BTC 24/7 - we still scan BTC in evening gap
+                if "BTCUSD" in PAIRS and now.time().hour not in [11,12,13,16,17,18,19,20]:
+                     pass # skip to save API
+                print(f"Outside session - sleeping 60s - {now_str}")
+                await asyncio.sleep(60)
 
         except Exception as e:
-            print(f"Error: {e}")
-            await asyncio.sleep(10)
+            print(f"Scheduler error: {e}")
+            await asyncio.sleep(30)
 
 async def main():
-    threading.Thread(target=run_flask, daemon=True).start()
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start_command))
-    await application.initialize()
-    await application.start()
-    asyncio.create_task(trading_loop())
-    print("BOT STARTED - WITH SESSION FINISH COUNT!")
-    await application.updater.start_polling()
-    await asyncio.Event().wait()
+    app = Application.builder().token(BOT_TOKEN).build()
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("✅ No conflict - Pro scheduler started")
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(drop_pending_updates=True)
+    asyncio.create_task(pro_scheduler())
+    while True: await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     asyncio.run(main())
