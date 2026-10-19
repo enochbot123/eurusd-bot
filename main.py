@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Enoch Pro 9:30 2:30 8:30 LIVE"
+    return "Enoch Final Fine Sticker LIVE"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -27,9 +27,6 @@ def send(cid, txt):
 PAIRS = ["EUR/USD OTC","AUD/CAD OTC","AUD/JPY","CHF/JPY OTC","AUD/CAD","Gold OTC"]
 
 def get_session(now):
-    # Morning 9:30 - 10:30
-    # Afternoon 14:30 - 15:30
-    # Evening 20:30 - 21:30
     hm = now.hour * 100 + now.minute
     if 930 <= hm <= 1030:
         return "MORNING"
@@ -55,28 +52,26 @@ def loop():
             is_up = random.choice([True, False])
             set_time = (now + timedelta(minutes=1)).strftime("%H:%M")
             short = p.replace(" OTC","")
-            # PRO MESSAGE 1 - CLOCK + SET
             m1 = "PAIR: " + p + "\n"
             m1 += "EXPIRY: 3 MIN [M3]\n"
             m1 += "CLOCK SET: " + set_time + "\n"
             m1 += "PREPARE: " + short + "\n"
             m1 += "PAYOUT: +92% | " + sess + "\n"
             m1 += "STATUS: Waiting for entry..."
-            # PRO MESSAGE 2 - DIRECTION + STICKER + REASON
             if is_up:
                 m2 = "ENTRY TIME: " + set_time + " " + sess + "\n"
-                m2 += "DIRECTION: UP\n"
-                m2 += "SIGNAL: ROCKET BUY\n"
-                m2 += "CHART: Break of Resistance\n"
-                m2 += "REASON: Price broke upper level + Volume spike\n"
-                m2 += "ACTION: BUY NOW"
+                m2 += "DIRECTION: UP \U0001f53c\n"
+                m2 += "SIGNAL: \U0001f680 ROCKET BUY \U0001f680\n"
+                m2 += "CHART: \U0001f4c8 Break of Resistance\n"
+                m2 += "REASON: Price broke upper level\n"
+                m2 += "ACTION: \u2b06\ufe0f BUY NOW \u2b06\ufe0f"
             else:
                 m2 = "ENTRY TIME: " + set_time + " " + sess + "\n"
-                m2 += "DIRECTION: DOWN\n"
-                m2 += "SIGNAL: TARGET SELL\n"
-                m2 += "CHART: Break of Support\n"
-                m2 += "REASON: Price broke lower level + Bearish pressure\n"
-                m2 += "ACTION: SELL NOW"
+                m2 += "DIRECTION: DOWN \U0001f53d\n"
+                m2 += "SIGNAL: \U0001f3af TARGET SELL \U0001f3af\n"
+                m2 += "CHART: \U0001f4c9 Break of Support\n"
+                m2 += "REASON: Price broke lower level\n"
+                m2 += "ACTION: \u2b07\ufe0f SELL NOW \u2b07\ufe0f"
             send(CHANNEL_ID, m1)
             time.sleep(60)
             send(CHANNEL_ID, m2)
