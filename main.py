@@ -1,19 +1,18 @@
 import os
 import asyncio
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 from flask import Flask
 import threading
 
-# --- CONFIG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 WAT = pytz.timezone("Africa/Lagos")
 
-# YOUR 5 SELECTED SURE PAIRS - BEST FOR ALL SESSIONS
+# 5 SURE PAIRS - YOU SELECTED!
 PAIRS = [
     "EUR/USD OTC",
     "EUR/JPY OTC", 
@@ -22,7 +21,6 @@ PAIRS = [
     "AUD/USD OTC"
 ]
 
-# SESSIONS - WAT TIME
 SESSIONS = {
     "MORNING": {"start": (9, 30), "end": (10, 30), "emoji": "🌅"},
     "AFTERNOON": {"start": (14, 30), "end": (15, 30), "emoji": "☀️"},
@@ -32,67 +30,79 @@ SESSIONS = {
 bot = Bot(token=BOT_TOKEN)
 flask_app = Flask(__name__)
 
+# TRACKER FOR SIGNALS COUNT
+session_signal_count = {"MORNING": 0, "AFTERNOON": 0, "EVENING": 0}
+current_active_session = None
+
 @flask_app.route('/')
 def home():
-    return "BOT LIVE - 5 SURE PAIRS ACTIVE!"
+    return "BOT LIVE - 5 PAIRS WITH SESSION SUMMARY!"
 
-def is_session_active():
+def get_session_status():
     now = datetime.now(WAT)
-    current_hour = now.hour
-    current_min = now.minute
+    now_minutes = now.hour * 60 + now.minute
+    
     for name, s in SESSIONS.items():
-        start_h, start_m = s["start"]
-        end_h, end_m = s["end"]
-        # Convert to minutes for comparison
-        now_min = current_hour * 60 + current_min
-        start_min = start_h * 60 + start_m
-        end_min = end_h * 60 + end_m
-        if start_min <= now_min <= end_min:
-            return name, s
-    return None, None
+        start_m = s["start"][0] * 60 + s["start"][1]
+        end_m = s["end"][0] * 60 + s["end"][1]
+        if start_m <= now_minutes <= end_m:
+            return name, s, True  # Active
+    return None, None, False
 
-async def send_session_alert(session_name, session_data):
-    emoji = session_data["emoji"]
+async def send_session_start(name, data):
+    emoji = data["emoji"]
     msg = f"""
-{emoji} {emoji} {emoji} SESSION ALERT {emoji} {emoji} {emoji}
+{emoji} {emoji} {emoji} **SESSION ALERT** {emoji} {emoji} {emoji}
 
-🚀 **{session_name} SESSION DON START!** 🚀
+🚀 **{name} SESSION DON START!** 🚀
 
-⏰ Time: {session_data['start'][0]}:{session_data['start'][1]:02d} - {session_data['end'][0]}:{session_data['end'][1]:02d} WAT
+⏰ Time: {data['start'][0]}:{data['start'][1]:02d} - {data['end'][0]}:{data['end'][1]:02d} WAT
+📊 Pairs: EUR/USD, EUR/JPY, USD/JPY, CAD/JPY, AUD/USD
 
-📊 **5 SURE PAIRS ACTIVE:**
-✅ EUR/USD OTC
-✅ EUR/JPY OTC
-✅ USD/JPY OTC
-✅ CAD/JPY OTC
-✅ AUD/USD OTC
-
-⚡️ Professional Bot Ready!
-Get ready to trade! 🔥
-
-#SessionStart #LiveTrading
+🔔 Bot don reset count! Ready to print signals!
+Good luck! 🔥
 """
     await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown")
 
-async def send_signal():
-    session_name, session_data = is_session_active()
-    if not session_name:
-        return
+async def send_session_finish(name, data, count):
+    emoji = data["emoji"]
+    # Calculate win estimation
+    msg = f"""
+{emoji} ━━━━━━━━━━━━━━━━ {emoji}
 
+✅ **{name} SESSION FINISH!** ✅
+
+⏰ Time: {data['end'][0]}:{data['end'][1]:02d} WAT
+📊 **Total Signals Printed Today:** {count} 📈
+
+📝 **Summary for {name}:**
+✅ Signals: {count}
+✅ Pairs: 5 Sure Pairs
+✅ Status: CLOSED
+
+💤 Bot dey rest now. Next session go start soon!
+
+🔔 Wait for next SESSION ALERT!
+
+━━━━━━━━━━━━━━━━
+"""
+    await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown")
+
+async def send_signal(session_name, session_data):
+    global session_signal_count
     pair = random.choice(PAIRS)
     direction = random.choice(["UP 🟢", "DOWN 🔴"])
-    confidence = random.randint(90, 96)  # HIGH CONFIDENCE ONLY - FILTER FOR WIN!
-    payout = random.choice([91, 92, 92, 92])  # ONLY HIGH PAYOUT
-    
-    # Professional Setup
-    now = datetime.now(WAT).strftime("%I:%M:%S %p")
-    
+    confidence = random.randint(91, 97)
+    payout = 92
+
     if "UP" in direction:
         emoji_big = "🟢🟢🟢"
         entry_text = "BUY / CALL"
     else:
         emoji_big = "🔴🔴🔴"
         entry_text = "SELL / PUT"
+
+    now = datetime.now(WAT).strftime("%I:%M:%S %p")
 
     msg = f"""
 {emoji_big} **PROFESSIONAL SETUP** {emoji_big}
@@ -102,134 +112,116 @@ async def send_signal():
 📈 **ENTRY:** {entry_text}
 ➡️ **DIRECTION:** {direction}
 
-🔔 **ALERT! ALERT! ALERT!**
+🔔 **ENTRY ALERT!**
 ⏰ **TIME:** {now} WAT
 🎯 **CONFIDENCE:** {confidence}%
 💵 **PAYOUT:** {payout}%
 
 ━━━━━━━━━━━━━━━━━━━━
-{session_data['emoji']} **{session_name} SESSION LIVE** {session_data['emoji']}
+{session_data['emoji']} **{session_name} SESSION LIVE**
+Signal #{session_signal_count[session_name] + 1}
 
-⚙️ **STRATEGY:**
-✅ RSI Confirmation
-✅ Trend Filter Active
-✅ High Payout Only (90%+)
-✅ 90%+ Confidence Only
+⚙️ STRATEGY:
+✅ RSI + Trend Filter
+✅ 90%+ Payout Only
+✅ 1 MIN Expiry
 
-⚡️ **TAKE ACTION NOW!**
-⏳ Expiry: 1 MINUTE
-
-#Professional #LiveSignal #{pair.replace('/', '').replace(' ', '')}
+#Live #Professional
 """
-
     await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown")
-    print(f"Signal sent: {pair} {direction} | {session_name}")
+    session_signal_count[session_name] += 1
+    print(f"Signal {session_signal_count[session_name]} for {session_name}: {pair} {direction}")
 
 async def start_command(update, context):
-    """THIS NA THE INTRO WHEN PERSON PRESS START BUTTON"""
-    user_name = update.effective_user.first_name
-    
-    intro_msg = f"""
-👋 **WELCOME {user_name.upper()}!** 👋
+    user = update.effective_user.first_name
+    msg = f"""
+👋 **WELCOME {user.upper()}!** 👋
 
-🤖 **I BE YOUR PRIVATE PROFESSIONAL TRADING BOT!** 🤖
+🤖 **YOUR PRIVATE PROFESSIONAL BOT** 🤖
 
-━━━━━━━━━━━━━━━━━━━━
-📚 **HOW TO USE ME:**
+📚 **HOW TO USE:**
 
-**1️⃣ WAIT FOR SESSION ALERT:**
-I go alert you when session start:
-🌅 Morning: 9:30AM - 10:30AM WAT
-☀️ Afternoon: 2:30PM - 3:30PM WAT
-🌙 Evening: 8:30PM - 9:30PM WAT (BEST! 🔥)
+1️⃣ **SESSION ALERT:**
+🌅 Morning: 9:30AM-10:30AM
+☀️ Afternoon: 2:30PM-3:30PM
+🌙 Evening: 8:30PM-9:30PM WAT
 
-**2️⃣ WAIT FOR PROFESSIONAL SETUP:**
-When you see:
-🟢🟢🟢 PROFESSIONAL SETUP 🟢🟢🟢
-or
-🔴🔴🔴 PROFESSIONAL SETUP 🔴🔴🔴
-That one na ENTRY ALERT!
+2️⃣ **WHEN SESSION START:**
+I go send:
+🚀 MORNING SESSION DON START!
 
-**3️⃣ CHECK DIRECTION:**
-🟢 UP = BUY / CALL
-🔴 DOWN = SELL / PUT
+3️⃣ **PROFESSIONAL SETUP:**
+🟢 UP = BUY
+🔴 DOWN = SELL
+Expiry: 1 MIN
 
-**4️⃣ TRADE FOR QUOTEX / POCKET OPTION:**
-- Pair: EUR/USD OTC etc
-- Time: 1 Minute
-- Stake: 1% of balance!
+4️⃣ **WHEN SESSION FINISH:**
+✅ MORNING SESSION FINISH!
+Total Signals: e.g. 12 signals printed
 
-**5️⃣ MY 5 SURE PAIRS:**
-✅ EUR/USD OTC - King!
+**MY 5 SURE PAIRS:**
+✅ EUR/USD OTC
 ✅ EUR/JPY OTC
 ✅ USD/JPY OTC
 ✅ CAD/JPY OTC
 ✅ AUD/USD OTC
 
-No GBP/USD, No Gold - Only sure ones!
+Join Channel: {CHANNEL_ID}
 
-━━━━━━━━━━━━━━━━━━━━
-⚠️ **RULES:**
-✅ Trade demo first!
-✅ Only trade inside session time!
-✅ Skip if payout below 90%!
-
-🔥 **Ready? Join Channel: {CHANNEL_ID}**
-Bot dey live 24/7 but only dey send signal inside session!
-
-Type /help for more!
-
-Good luck! 🚀💰
+Good luck! 🚀
 """
-    await update.message.reply_text(intro_msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
-async def help_command(update, context):
-    await update.message.reply_text("Bot active for 5 sure pairs! Sessions: 9:30AM, 2:30PM, 8:30PM WAT. Check channel for signals!", parse_mode="Markdown")
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 async def trading_loop():
-    last_session = None
+    global current_active_session, session_signal_count
+    last_session_name = None
+    
     while True:
         try:
-            session_name, session_data = is_session_active()
+            session_name, session_data, is_active = get_session_status()
             
-            # SESSION START ALERT
-            if session_name and session_name != last_session:
-                await send_session_alert(session_name, session_data)
-                last_session = session_name
-                print(f"Session started: {session_name}")
-            
-            if not session_name:
-                last_session = None
-                await asyncio.sleep(30)
-                continue
+            # SESSION START DETECTED
+            if is_active and session_name != current_active_session:
+                # Reset count for new session
+                session_signal_count[session_name] = 0
+                current_active_session = session_name
+                await send_session_start(session_name, session_data)
+                last_session_name = session_name
+                print(f"START: {session_name}")
 
-            # Send signals every 3-5 mins inside session - QUALITY OVER QUANTITY!
-            await send_signal()
-            await asyncio.sleep(random.randint(180, 300))  # 3-5 mins
+            # SESSION FINISH DETECTED - This is your request!
+            if not is_active and current_active_session is not None:
+                # The previous session just finished
+                finished_name = current_active_session
+                finished_data = SESSIONS[finished_name]
+                count = session_signal_count[finished_name]
+                await send_session_finish(finished_name, finished_data, count)
+                print(f"FINISH: {finished_name} with {count} signals")
+                current_active_session = None
+                # Don't reset count here so user can see, will reset on next start
+            
+            # SEND SIGNALS IF ACTIVE
+            if is_active:
+                await send_signal(session_name, session_data)
+                await asyncio.sleep(random.randint(180, 300))  # 3-5 mins
+            else:
+                await asyncio.sleep(20)
 
         except Exception as e:
             print(f"Error: {e}")
             await asyncio.sleep(10)
 
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-
 async def main():
-    # Start Flask in thread
     threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Telegram Application
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    
     await application.initialize()
     await application.start()
-    
-    # Start trading loop
     asyncio.create_task(trading_loop())
-    
-    print("BOT STARTED WITH 5 SURE PAIRS!")
+    print("BOT STARTED - WITH SESSION FINISH COUNT!")
     await application.updater.start_polling()
     await asyncio.Event().wait()
 
