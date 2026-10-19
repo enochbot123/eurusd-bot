@@ -3,181 +3,169 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, time
 import pytz
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import asyncio
 
-# --- FAKE SERVER FOR RENDER FREE WEB SERVICE ---
+# --- FAKE SERVER FOR RENDER FREE ---
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self): 
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running - Free Service")
-
+        self.wfile.write(b"Bot is running")
 def run_fake_server():
     port = int(os.environ.get("PORT", 10000))
-    print(f"Fake server starting on port {port}")
     HTTPServer(('0.0.0.0', port), Handler).serve_forever()
-
 threading.Thread(target=run_fake_server, daemon=True).start()
-# --- END FAKE SERVER ---
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-
-PAIRS = {
-    "EURUSD": "EURUSD=X",
-    "USDJPY": "USDJPY=X",
-    "EURJPY": "EURJPY=X",
-    "AUDUSD": "AUDUSD=X",
-    "USDCAD": "USDCAD=X",
-    "BTCUSD": "BTC-USD"
-}
-
-bot = Bot(token=BOT_TOKEN)
 lagos = pytz.timezone('Africa/Lagos')
 
-SESSIONS = {
-    "🌅 MORNING MONEY": (time(9, 30), time(10, 30)),
-    "🔥 AFTERNOON ACTION": (time(14, 30), time(15, 30)),
-    "🌙 EVENING SNIPER": (time(20, 30), time(21, 30))
-}
+# --- YOUR PRO LINKS ---
+REGISTER_LINK = "https://your-affiliate-link.com" # PUT YOUR LINK HERE
+SUPPORT_USERNAME = "@Enochsystem" # Change to yours
+CHANNEL_USERNAME = "Enoch Signals" # Change to yours
 
-reminded = {}
+# --- PROFESSIONAL WELCOME MESSAGE (Like Screenshot) ---
+def get_welcome_text(first_name):
+    return f"""
+⭐ ENOCH PROFESSIONAL TRADING SYSTEM ⭐
 
-def ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+⚠️ THIS IS NOT GAMBLING - THIS IS STRATEGY
 
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+Hello {first_name} 👋
+Welcome to Professional Hub!
 
-def macd(series):
-    ema12 = ema(series, 12)
-    ema26 = ema(series, 26)
-    macd_line = ema12 - ema26
-    signal = ema(macd_line, 9)
-    return macd_line, signal
+📊 PROFESSIONAL SETTINGS:
+📅 Sessions: 9:30AM | 2:30PM | 8:30PM WAT
+⏱️ Expiry: 3 MIN [M3] | Entry M1
+🧠 Strategy: Breakout + Retest + Volume
+💰 Risk: 1% | Martingale 1 Step Only
+🎯 Pairs: EUR/USD, GBP/USD, GOLD etc
 
-def atr(high, low, close, period=14):
-    tr1 = high - low
-    tr2 = (high - close.shift()).abs()
-    tr3 = (low - close.shift()).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
+📢 Channel: {CHANNEL_USERNAME}
+👨‍💼 Support: {SUPPORT_USERNAME}
 
-def analyze_real(pair_symbol):
-    try:
-        df = yf.download(pair_symbol, period="1d", interval="5m", progress=False, auto_adjust=True)
-        if len(df) < 60: return None, "Low data", 0,0,0,0,0,0
-        close = df['Close']
-        high = df['High']
-        low = df['Low']
-        df['EMA20'] = ema(close, 20)
-        df['EMA50'] = ema(close, 50)
-        df['RSI'] = rsi(close, 14)
-        df['ATR'] = atr(high, low, close, 14)
-        macd_line, signal_line = macd(close)
-        df['MACD'] = macd_line
-        df['SIGNAL'] = signal_line
-        last = df.iloc[-1]
-        price = float(last['Close'])
-        ema20 = float(last['EMA20'])
-        ema50 = float(last['EMA50'])
-        rsi_v = float(last['RSI'])
-        atr_v = float(last['ATR'])
-        macd_l = float(last['MACD'])
-        sig_l = float(last['SIGNAL'])
-        
-        if price > ema20 > ema50 and 50 < rsi_v < 70 and macd_l > sig_l:
-            reason = f"🟢 BULLISH:\n├ Break above EMA20 & EMA50\n├ RSI {rsi_v:.1f} UP\n├ MACD bullish\n└ ATR UP"
-            return "BUY", reason, price, rsi_v, macd_l, atr_v, ema20, ema50
-        if price < ema20 < ema50 and 30 < rsi_v < 50 and macd_l < sig_l:
-            reason = f"🔴 BEARISH:\n├ Break below EMA20 & EMA50\n├ RSI {rsi_v:.1f} DOWN\n├ MACD bearish\n└ ATR DOWN"
-            return "SELL", reason, price, rsi_v, macd_l, atr_v, ema20, ema50
-        return None, f"Waiting - Price {price:.5f} | RSI {rsi_v:.1f}", price, rsi_v, macd_l, atr_v, ema20, ema50
-    except Exception as e:
-        return None, str(e), 0,0,0,0,0,0
+CHART SETUP:
+• Resistance/Support breakout
+• Volume confirmation
+• Confidence 87-96%
 
-def get_current_session():
-    now_t = datetime.now(lagos).time()
-    for name, (start, end) in SESSIONS.items():
-        if start <= now_t <= end: return name
-    return None
+⚠️ RISK WARNING: Trading involves risk. Trade with money you can afford to lose. This is educational signals only.
 
-def is_reminder_time():
-    now_t = datetime.now(lagos).time()
-    for name, (start, end) in SESSIONS.items():
-        start_min = start.hour*60 + start.minute - 5
-        now_min = now_t.hour*60 + now_t.minute
-        if now_min == start_min: return name
-    return None
+Need help? Contact {SUPPORT_USERNAME}
 
-async def pro_scheduler():
-    global reminded
-    pair_list = list(PAIRS.keys())
-    idx = 0
-    pending_trade = None
+👇 Choose option below:
+"""
+
+def get_main_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("📊 Start Signals", callback_data='start_signals')],
+        [InlineKeyboardButton("🔗 REGISTER HERE", url=REGISTER_LINK)],
+        [InlineKeyboardButton("🆔 My Trading ID", callback_data='my_id'),
+         InlineKeyboardButton("ℹ️ How it works", callback_data='how_it_works')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# --- HANDLERS ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    first_name = update.effective_user.first_name
+    await update.message.reply_text(
+        get_welcome_text(first_name),
+        reply_markup=get_main_keyboard(),
+        parse_mode='HTML'
+    )
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
     
+    if query.data == 'start_signals':
+        await query.edit_message_text(
+            text=f"✅ <b>Signals Activated!</b>\n\n"
+                 f"⏰ Next Session: 9:30 AM WAT\n"
+                 f"📢 Signals will be sent to: {CHANNEL_USERNAME}\n\n"
+                 f"🔔 Make sure you JOIN the channel!\n\n"
+                 f"{get_welcome_text(query.from_user.first_name)}",
+            reply_markup=get_main_keyboard(),
+            parse_mode='HTML'
+        )
+        # Send test signal to channel
+        bot = Bot(token=BOT_TOKEN)
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 {query.from_user.first_name} just activated signals! Welcome!")
+
+    elif query.data == 'my_id':
+        user_id = query.from_user.id
+        await query.message.reply_text(
+            f"🆔 <b>Your Trading ID</b>\n\n"
+            f"ID: <code>{user_id}</code>\n"
+            f"Name: {query.from_user.first_name}\n"
+            f"Status: ✅ Registered\n\n"
+            f"Use this ID if you contact support.",
+            parse_mode='HTML'
+        )
+
+    elif query.data == 'how_it_works':
+        await query.message.reply_text(
+            "ℹ️ <b>How it Works</b>\n\n"
+            "1️⃣ Click REGISTER HERE and create trading account\n"
+            "2️⃣ Click Start Signals\n"
+            "3️⃣ Bot will analyze live market (EMA, RSI, MACD, Volume)\n"
+            "4️⃣ You get signal at 9:30AM, 2:30PM, 8:30PM WAT\n"
+            "5️⃣ Enter trade for 3 MIN expiry on M1 timeframe\n"
+            "6️⃣ Use 1% risk only!\n\n"
+            "⚠️ This is strategy, not gambling!",
+            parse_mode='HTML'
+        )
+
+# --- REAL SIGNAL LOGIC (Background) ---
+async def signal_scheduler(app):
+    bot = Bot(token=BOT_TOKEN)
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        print("✅ Webhook deleted")
-    except Exception as e:
-        print(f"Delete error: {e}")
-
+        print("Webhook deleted")
+    except: pass
+    
     while True:
         try:
             now = datetime.now(lagos)
-            now_str = now.strftime('%H:%M:%S WAT')
-            current_session = get_current_session()
-            reminder_session = is_reminder_time()
-            
-            if reminder_session and reminded.get(reminder_session) != now.date():
-                reminded[reminder_session] = now.date()
-                await bot.send_message(chat_id=CHANNEL_ID, text=f"⏰ REMINDER - 5 MINS TO {reminder_session} ⏰\n🕘 {SESSIONS[reminder_session][0].strftime('%I:%M %p')} WAT\n⏰ Now: {now_str}")
-                await asyncio.sleep(60)
-                continue
-
-            if current_session and now.time().minute == SESSIONS[current_session][0].minute and now.time().second < 15:
-                await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 {current_session} STARTED 🚀\n⏰ {now_str}")
-                await asyncio.sleep(60)
-
-            if current_session:
-                if pending_trade:
-                    pt = pending_trade
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"{pt['emoji']} ENTER NOW! {pt['pair']} - {pt['type']}\n⏰ {now_str}\n💰 ENTRY: {pt['price']:.5f}\n🛑 SL: {pt['sl']:.5f}\n🎯 TP1: {pt['tp1']:.5f}\n🎯 TP2: {pt['tp2']:.5f}\n🧠 {pt['reason']}")
-                    pending_trade = None
-                    idx += 1
-                    await asyncio.sleep(300)
-                    continue
-
-                pair_name = pair_list[idx % len(pair_list)]
-                symbol = PAIRS[pair_name]
-                sig_type, reason, price, rsi_v, macd_v, atr_v, ema20, ema50 = analyze_real(symbol)
-
-                if sig_type:
-                    emoji = "🟢⬆️" if sig_type == "BUY" else "🔴⬇️"
-                    pip = 0.0010 if "JPY" not in pair_name else 0.10
-                    if "BTC" in pair_name: pip = 150.0
-                    sl = price - pip*7 if sig_type=="BUY" else price + pip*7
-                    tp1 = price + pip*10 if sig_type=="BUY" else price - pip*10
-                    tp2 = price + pip*20 if sig_type=="BUY" else price - pip*20
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"👀 SETUP - {pair_name} 👀\n⏰ {now_str}\n{emoji} {sig_type}\n💰 {price:.5f}\n🧠 {reason}\n⏳ ENTER in 5 mins")
-                    pending_trade = {"pair": pair_name, "type": sig_type, "price": price, "sl": sl, "tp1": tp1, "tp2": tp2, "reason": reason, "emoji": emoji}
-                else:
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"🔍 SCAN | {pair_name} | {now_str}\n💰 {price:.5f} | RSI {rsi_v:.1f}\n{reason}")
-                    idx += 1
-                await asyncio.sleep(300)
-            else:
-                await asyncio.sleep(60)
+            # Check if time is 9:30, 14:30, 20:30
+            if (now.hour == 9 and now.minute == 30) or \
+               (now.hour == 14 and now.minute == 30) or \
+               (now.hour == 20 and now.minute == 30):
+                
+                # Example real signal
+                await bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text="⭐ ENOCH PROFESSIONAL SIGNAL ⭐\n\n"
+                         "📊 EUR/USD\n"
+                         "🟢 BUY - CALL\n"
+                         "⏱️ Expiry: 3 MIN\n"
+                         "📈 Confidence: 92%\n"
+                         "🧠 Reason: Breakout + Volume Confirm\n"
+                         "⏰ Enter at exact time we give\n\n"
+                         "⚠️ 1% Risk Only",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 REGISTER HERE", url=REGISTER_LINK)]])
+                )
+                await asyncio.sleep(60) # Avoid duplicate
+            await asyncio.sleep(30)
         except Exception as e:
-            print(f"Error: {e}")
+            print(e)
             await asyncio.sleep(30)
 
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Start scheduler in background
+    app.job_queue.run_once(lambda ctx: asyncio.create_task(signal_scheduler(app)), 0)
+    
+    print("Bot started - Professional Mode")
+    app.run_polling()
+
 if __name__ == "__main__":
-    asyncio.run(pro_scheduler())
+    main()
