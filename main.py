@@ -1,4 +1,6 @@
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -7,9 +9,23 @@ import pytz
 from telegram import Bot
 import asyncio
 
+# --- FAKE SERVER FOR RENDER FREE WEB SERVICE ---
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self): 
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running - Free Service")
+
+def run_fake_server():
+    port = int(os.environ.get("PORT", 10000))
+    print(f"Fake server starting on port {port}")
+    HTTPServer(('0.0.0.0', port), Handler).serve_forever()
+
+threading.Thread(target=run_fake_server, daemon=True).start()
+# --- END FAKE SERVER ---
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-YOUR_LINK = os.getenv("YOUR_LINK", "https://t.me/your_channel")
 
 PAIRS = {
     "EURUSD": "EURUSD=X",
@@ -79,12 +95,12 @@ def analyze_real(pair_symbol):
         sig_l = float(last['SIGNAL'])
         
         if price > ema20 > ema50 and 50 < rsi_v < 70 and macd_l > sig_l:
-            reason = f"🟢 BULLISH BREAKOUT:\n├ Price break above EMA20 & EMA50\n├ RSI {rsi_v:.1f} UP momentum\n├ MACD bullish cross\n└ ATR support UP"
+            reason = f"🟢 BULLISH:\n├ Break above EMA20 & EMA50\n├ RSI {rsi_v:.1f} UP\n├ MACD bullish\n└ ATR UP"
             return "BUY", reason, price, rsi_v, macd_l, atr_v, ema20, ema50
         if price < ema20 < ema50 and 30 < rsi_v < 50 and macd_l < sig_l:
-            reason = f"🔴 BEARISH BREAKDOWN:\n├ Price break below EMA20 & EMA50\n├ RSI {rsi_v:.1f} sellers control\n├ MACD bearish cross\n└ ATR confirms DOWN"
+            reason = f"🔴 BEARISH:\n├ Break below EMA20 & EMA50\n├ RSI {rsi_v:.1f} DOWN\n├ MACD bearish\n└ ATR DOWN"
             return "SELL", reason, price, rsi_v, macd_l, atr_v, ema20, ema50
-        return None, f"Waiting breakout - Price {price:.5f} | RSI {rsi_v:.1f}", price, rsi_v, macd_l, atr_v, ema20, ema50
+        return None, f"Waiting - Price {price:.5f} | RSI {rsi_v:.1f}", price, rsi_v, macd_l, atr_v, ema20, ema50
     except Exception as e:
         return None, str(e), 0,0,0,0,0,0
 
@@ -108,12 +124,11 @@ async def pro_scheduler():
     idx = 0
     pending_trade = None
     
-    # ✅ FIX CONFLICT - Delete webhook once at start
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        print("✅ Webhook deleted - No conflict")
+        print("✅ Webhook deleted")
     except Exception as e:
-        print(f"Delete webhook error: {e}")
+        print(f"Delete error: {e}")
 
     while True:
         try:
@@ -124,18 +139,18 @@ async def pro_scheduler():
             
             if reminder_session and reminded.get(reminder_session) != now.date():
                 reminded[reminder_session] = now.date()
-                await bot.send_message(chat_id=CHANNEL_ID, text=f"⏰ SESSION REMINDER - 5 MINS TO GO ⏰\n📢 {reminder_session}\n🕘 Start: {SESSIONS[reminder_session][0].strftime('%I:%M %p')} WAT\n⏰ Now: {now_str}")
+                await bot.send_message(chat_id=CHANNEL_ID, text=f"⏰ REMINDER - 5 MINS TO {reminder_session} ⏰\n🕘 {SESSIONS[reminder_session][0].strftime('%I:%M %p')} WAT\n⏰ Now: {now_str}")
                 await asyncio.sleep(60)
                 continue
 
             if current_session and now.time().minute == SESSIONS[current_session][0].minute and now.time().second < 15:
-                await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 {current_session} SESSION STARTED 🚀\n⏰ {now_str}\n💱 Pairs: {' | '.join(PAIRS.keys())}")
+                await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 {current_session} STARTED 🚀\n⏰ {now_str}")
                 await asyncio.sleep(60)
 
             if current_session:
                 if pending_trade:
                     pt = pending_trade
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"{pt['emoji']} ENTER NOW! {pt['pair']} - {pt['type']} {pt['emoji']}\n━━━━━━━━━━\n⏰ {now_str}\n💱 {pt['pair']}\n💰 ENTRY: {pt['price']:.5f}\n🛑 SL: {pt['sl']:.5f}\n🎯 TP1: {pt['tp1']:.5f}\n🎯 TP2: {pt['tp2']:.5f}\n🧠 {pt['reason']}")
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"{pt['emoji']} ENTER NOW! {pt['pair']} - {pt['type']}\n⏰ {now_str}\n💰 ENTRY: {pt['price']:.5f}\n🛑 SL: {pt['sl']:.5f}\n🎯 TP1: {pt['tp1']:.5f}\n🎯 TP2: {pt['tp2']:.5f}\n🧠 {pt['reason']}")
                     pending_trade = None
                     idx += 1
                     await asyncio.sleep(300)
@@ -152,16 +167,16 @@ async def pro_scheduler():
                     sl = price - pip*7 if sig_type=="BUY" else price + pip*7
                     tp1 = price + pip*10 if sig_type=="BUY" else price - pip*10
                     tp2 = price + pip*20 if sig_type=="BUY" else price - pip*20
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"👀 SETUP IDENTIFIED - {pair_name} 👀\n⏰ {now_str} | {current_session}\n💱 {pair_name} | {emoji} {sig_type}\n💰 Price: {price:.5f}\n🧠 {reason}\n⏳ NEXT: ENTER NOW in 5 mins")
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"👀 SETUP - {pair_name} 👀\n⏰ {now_str}\n{emoji} {sig_type}\n💰 {price:.5f}\n🧠 {reason}\n⏳ ENTER in 5 mins")
                     pending_trade = {"pair": pair_name, "type": sig_type, "price": price, "sl": sl, "tp1": tp1, "tp2": tp2, "reason": reason, "emoji": emoji}
                 else:
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"🔍 SCAN | {pair_name} | ⏰ {now_str}\n💰 {price:.5f} | RSI {rsi_v:.1f}\n📝 {reason}\n❌ No breakout - Next in 5 mins")
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"🔍 SCAN | {pair_name} | {now_str}\n💰 {price:.5f} | RSI {rsi_v:.1f}\n{reason}")
                     idx += 1
                 await asyncio.sleep(300)
             else:
                 await asyncio.sleep(60)
         except Exception as e:
-            print(f"Scheduler error: {e}")
+            print(f"Error: {e}")
             await asyncio.sleep(30)
 
 if __name__ == "__main__":
