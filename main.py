@@ -3,7 +3,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime
 import pytz
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -24,12 +24,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 lagos = pytz.timezone('Africa/Lagos')
 
-# --- YOUR PRO LINKS ---
-REGISTER_LINK = "https://your-affiliate-link.com" # PUT YOUR LINK HERE
-SUPPORT_USERNAME = "@Enochsystem" # Change to yours
-CHANNEL_USERNAME = "Enoch Signals" # Change to yours
+REGISTER_LINK = "https://your-affiliate-link.com" 
+SUPPORT_USERNAME = "@Enochsystem"
+CHANNEL_USERNAME = "Enoch Signals"
 
-# --- PROFESSIONAL WELCOME MESSAGE (Like Screenshot) ---
 def get_welcome_text(first_name):
     return f"""
 ⭐ ENOCH PROFESSIONAL TRADING SYSTEM ⭐
@@ -50,9 +48,9 @@ Welcome to Professional Hub!
 👨‍💼 Support: {SUPPORT_USERNAME}
 
 CHART SETUP:
-• Resistance/Support breakout
-• Volume confirmation
-• Confidence 87-96%
+- Resistance/Support breakout
+- Volume confirmation
+- Confidence 87-96%
 
 ⚠️ RISK WARNING: Trading involves risk. Trade with money you can afford to lose. This is educational signals only.
 
@@ -70,100 +68,57 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first_name = update.effective_user.first_name
     await update.message.reply_text(
         get_welcome_text(first_name),
-        reply_markup=get_main_keyboard(),
-        parse_mode='HTML'
+        reply_markup=get_main_keyboard()
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     if query.data == 'start_signals':
         await query.edit_message_text(
-            text=f"✅ <b>Signals Activated!</b>\n\n"
-                 f"⏰ Next Session: 9:30 AM WAT\n"
-                 f"📢 Signals will be sent to: {CHANNEL_USERNAME}\n\n"
-                 f"🔔 Make sure you JOIN the channel!\n\n"
-                 f"{get_welcome_text(query.from_user.first_name)}",
-            reply_markup=get_main_keyboard(),
-            parse_mode='HTML'
+            text=f"✅ Signals Activated!\n\nNext Session: 9:30 AM WAT\nChannel: {CHANNEL_USERNAME}\n\n{get_welcome_text(query.from_user.first_name)}",
+            reply_markup=get_main_keyboard()
         )
-        # Send test signal to channel
-        bot = Bot(token=BOT_TOKEN)
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 {query.from_user.first_name} just activated signals! Welcome!")
-
     elif query.data == 'my_id':
-        user_id = query.from_user.id
-        await query.message.reply_text(
-            f"🆔 <b>Your Trading ID</b>\n\n"
-            f"ID: <code>{user_id}</code>\n"
-            f"Name: {query.from_user.first_name}\n"
-            f"Status: ✅ Registered\n\n"
-            f"Use this ID if you contact support.",
-            parse_mode='HTML'
-        )
-
+        await query.message.reply_text(f"🆔 Your Trading ID\n\nID: {query.from_user.id}\nName: {query.from_user.first_name}\nStatus: ✅ Registered")
     elif query.data == 'how_it_works':
-        await query.message.reply_text(
-            "ℹ️ <b>How it Works</b>\n\n"
-            "1️⃣ Click REGISTER HERE and create trading account\n"
-            "2️⃣ Click Start Signals\n"
-            "3️⃣ Bot will analyze live market (EMA, RSI, MACD, Volume)\n"
-            "4️⃣ You get signal at 9:30AM, 2:30PM, 8:30PM WAT\n"
-            "5️⃣ Enter trade for 3 MIN expiry on M1 timeframe\n"
-            "6️⃣ Use 1% risk only!\n\n"
-            "⚠️ This is strategy, not gambling!",
-            parse_mode='HTML'
-        )
+        await query.message.reply_text("ℹ️ How it Works\n\n1️⃣ Click REGISTER HERE\n2️⃣ Click Start Signals\n3️⃣ Bot analyzes live market\n4️⃣ You get signal 9:30AM, 2:30PM, 8:30PM WAT\n5️⃣ Enter 3 MIN expiry")
 
-# --- REAL SIGNAL LOGIC (Background) ---
-async def signal_scheduler(app):
+# --- FIXED SCHEDULER WITHOUT JOB_QUEUE ---
+async def signal_scheduler():
     bot = Bot(token=BOT_TOKEN)
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        print("Webhook deleted")
-    except: pass
-    
+        print("✅ Webhook deleted")
+    except Exception as e:
+        print(e)
     while True:
         try:
             now = datetime.now(lagos)
-            # Check if time is 9:30, 14:30, 20:30
-            if (now.hour == 9 and now.minute == 30) or \
-               (now.hour == 14 and now.minute == 30) or \
-               (now.hour == 20 and now.minute == 30):
-                
-                # Example real signal
-                await bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text="⭐ ENOCH PROFESSIONAL SIGNAL ⭐\n\n"
-                         "📊 EUR/USD\n"
-                         "🟢 BUY - CALL\n"
-                         "⏱️ Expiry: 3 MIN\n"
-                         "📈 Confidence: 92%\n"
-                         "🧠 Reason: Breakout + Volume Confirm\n"
-                         "⏰ Enter at exact time we give\n\n"
-                         "⚠️ 1% Risk Only",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 REGISTER HERE", url=REGISTER_LINK)]])
-                )
-                await asyncio.sleep(60) # Avoid duplicate
+            if (now.hour == 9 and now.minute == 30) or (now.hour == 14 and now.minute == 30) or (now.hour == 20 and now.minute == 30):
+                if now.second < 10:
+                    await bot.send_message(
+                        chat_id=CHANNEL_ID,
+                        text="⭐ ENOCH PROFESSIONAL SIGNAL ⭐\n\n📊 EUR/USD\n🟢 BUY - CALL\n⏱️ Expiry: 3 MIN\n📈 Confidence: 92%\n🧠 Reason: Breakout + Volume Confirm\n\n⚠️ 1% Risk Only",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 REGISTER HERE", url=REGISTER_LINK)]])
+                    )
+                    await asyncio.sleep(65)
             await asyncio.sleep(30)
         except Exception as e:
             print(e)
             await asyncio.sleep(30)
 
+async def post_init(application: Application):
+    asyncio.create_task(signal_scheduler())
+
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Start scheduler in background
-    app.job_queue.run_once(lambda ctx: asyncio.create_task(signal_scheduler(app)), 0)
-    
     print("Bot started - Professional Mode")
     app.run_polling()
 
