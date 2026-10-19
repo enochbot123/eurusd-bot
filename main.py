@@ -6,14 +6,12 @@ from flask import Flask
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MY_ID = "8529194860"
 CHANNEL_ID = "-1003714315133"
-MY_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
 WAT = pytz.timezone("Africa/Lagos")
 
 app = Flask(__name__)
-
 @app.route('/')
 def home():
-    return "Enoch System LIVE - 5 Pairs Pro +92% ONLINE"
+    return "Enoch System LIVE - Pro Clock + Sticker Bot ONLINE"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -34,61 +32,44 @@ PAIRS = ["EUR/USD OTC","AUD/CAD OTC","AUD/JPY","CHF/JPY OTC","AUD/CAD"]
 def bot_loop():
     time.sleep(5)
     last = ""
-    wm = False
-    wa = False
-    we = False
-    send(MY_ID, "Bot LIVE - New 5 Pairs")
+    send(MY_ID, "Bot LIVE - Clock + Sticker version")
     while True:
         try:
             now = datetime.now(WAT)
             h = now.hour
-            m = now.minute
-            if h == 9 and m == 45 and not wm:
-                send(CHANNEL_ID, "MORNING REMINDER 9:45 AM - Morning Starts in 15 MINS 10AM-11AM UTC")
-                wm = True
-            if h == 9 and m == 55:
-                send(CHANNEL_ID, "FINAL CALL MORNING IN 5 MINS 10AM Sharp")
-            if h == 12 and m == 45 and not wa:
-                send(CHANNEL_ID, "AFTERNOON REMINDER 12:45 PM - Starts in 15 MINS 1PM-2PM")
-                wa = True
-            if h == 12 and m == 55:
-                send(CHANNEL_ID, "FINAL CALL AFTERNOON IN 5 MINS 1PM Sharp")
-            if h == 16 and m == 45 and not we:
-                send(CHANNEL_ID, "EVENING REMINDER 4:45 PM - Starts in 15 MINS 5PM-6PM")
-                we = True
-            if h == 16 and m == 55:
-                send(CHANNEL_ID, "FINAL CALL EVENING IN 5 MINS 5PM Sharp")
-            if h == 11:
-                wm = False
-            if h == 14:
-                wa = False
-            if h == 18:
-                we = False
             if h == 10 or h == 13 or h == 17:
                 sess = "MORNING" if h==10 else "AFTERNOON" if h==13 else "EVENING"
             else:
-                if h==9 or h==12 or h==16:
-                    time.sleep(30)
-                    continue
-                else:
-                    time.sleep(60)
-                    continue
+                time.sleep(30)
+                continue
             pair = random.choice(PAIRS)
             if pair == last:
                 pair = random.choice(PAIRS)
             last = pair
-            direction = random.choice(["UP","DOWN"])
+            is_up = random.choice([True, False])
+            direction = "UP" if is_up else "DOWN"
+            dir_emoji = "\u2b06\ufe0f" if is_up else "\u2b07\ufe0f"
+            sticker = "\U0001f4c8\U0001f7e9 UP \U0001f4c8" if is_up else "\U0001f4c9\U0001f7e5 DOWN \U0001f4c9"
             set_dt = now + timedelta(minutes=1)
             set_str = set_dt.strftime("%H:%M")
-            m1 = "Currency pair: " + pair + " Expiration: 3 min [M3] SET: " + set_str + " Payout +92%"
-            m2 = "Entry time: " + set_str + " " + sess + " Direction: " + direction
+            short = pair.replace(" OTC","")
+            # MESSAGE 1 - CLOCK
+            m1 = "\u23f0 Currency pair: " + pair + "\n"
+            m1 += "\u23f3 Expiration: 3 min [M3]\n"
+            m1 += "\U0001f550 SET: " + set_str + " - Prepare " + short + " \U0001f3af\n"
+            m1 += "\U0001f4b0 Payout: +92%"
+            # MESSAGE 2 - ENTRY + DIRECTION STICKER
+            m2 = "\U0001f680 Entry time: " + set_str + " - " + sess + "\n"
+            if is_up:
+                m2 += "\U0001f4c8 Direction: " + direction + " " + dir_emoji + "\n"
+                m2 += "\U0001f7e9\U0001f7e9 BUY \U0001f7e9\U0001f7e9\n"
+                m2 += "\U0001f525\U0001f4aa GO UP! \U0001f4aa\U0001f525"
+            else:
+                m2 += "\U0001f4c9 Direction: " + direction + " " + dir_emoji + "\n"
+                m2 += "\U0001f7e5\U0001f7e5 SELL \U0001f7e5\U0001f7e5\n"
+                m2 += "\U0001f525\U0001f4aa GO DOWN! \U0001f4aa\U0001f525"
             send(CHANNEL_ID, m1)
             time.sleep(60)
             send(CHANNEL_ID, m2)
             time.sleep(240)
-        except Exception as e:
-            print(e)
-            time.sleep(10)
-
-threading.Thread(target=run_flask, daemon=True).start()
-bot_loop()
+        except Exception
