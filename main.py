@@ -1,125 +1,105 @@
 import os
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import yfinance as yf
-import pandas as pd
-from datetime import datetime
-import pytz
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-import asyncio
-
-# --- FAKE SERVER FOR RENDER FREE ---
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self): 
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running")
-def run_fake_server():
-    port = int(os.environ.get("PORT", 10000))
-    HTTPServer(('0.0.0.0', port), Handler).serve_forever()
-threading.Thread(target=run_fake_server, daemon=True).start()
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-lagos = pytz.timezone('Africa/Lagos')
+# PUT YOUR REAL POCKET OPTION LINK HERE
+REGISTER_LINK = "https://pocketoption.com"
+# PUT YOUR OWN USERNAME OR YOUR ADMIN ID HERE
+ADMIN_USERNAME = "@Enochsystem"  # Your username
 
-REGISTER_LINK = "https://your-affiliate-link.com" 
-SUPPORT_USERNAME = "@Enochsystem"
-CHANNEL_USERNAME = "Enoch Signals"
+def main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 REGISTER WITH POCKET OPTION", url=REGISTER_LINK)],
+        [InlineKeyboardButton("📊 Start Signals", callback_data='start_signals')],
+        [InlineKeyboardButton("🆔 My Trading ID", callback_data='my_id'),
+         InlineKeyboardButton("ℹ️ How it works", callback_data='how')]
+    ])
 
-def get_welcome_text(first_name):
-    return f"""
+WELCOME_TEXT = """
 ⭐ ENOCH PROFESSIONAL TRADING SYSTEM ⭐
 
 ⚠️ THIS IS NOT GAMBLING - THIS IS STRATEGY
 
-Hello {first_name} 👋
-Welcome to Professional Hub!
+Hello {name} 👋
+Welcome!
 
-📊 PROFESSIONAL SETTINGS:
-📅 Sessions: 9:30AM | 2:30PM | 8:30PM WAT
-⏱️ Expiry: 3 MIN [M3] | Entry M1
-🧠 Strategy: Breakout + Retest + Volume
-💰 Risk: 1% | Martingale 1 Step Only
-🎯 Pairs: EUR/USD, GBP/USD, GOLD etc
+📊 HOW TO GET YOUR TRADING ID:
 
-📢 Channel: {CHANNEL_USERNAME}
-👨‍💼 Support: {SUPPORT_USERNAME}
+1️⃣ Click REGISTER WITH POCKET OPTION button below
+2️⃣ Register and fund $10 minimum
+3️⃣ Copy your Trader ID from Pocket Option
+4️⃣ Come back here and SEND THE ID to this bot
 
-CHART SETUP:
-- Resistance/Support breakout
-- Volume confirmation
-- Confidence 87-96%
+After you send ID, I go verify you and add you to VIP signals!
 
-⚠️ RISK WARNING: Trading involves risk. Trade with money you can afford to lose. This is educational signals only.
-
-Need help? Contact {SUPPORT_USERNAME}
-
-👇 Choose option below:
+👇 Click below to start:
 """
 
-def get_main_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("📊 Start Signals", callback_data='start_signals')],
-        [InlineKeyboardButton("🔗 REGISTER HERE", url=REGISTER_LINK)],
-        [InlineKeyboardButton("🆔 My Trading ID", callback_data='my_id'),
-         InlineKeyboardButton("ℹ️ How it works", callback_data='how_it_works')]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    first_name = update.effective_user.first_name
+    name = update.effective_user.first_name
     await update.message.reply_text(
-        get_welcome_text(first_name),
-        reply_markup=get_main_keyboard()
+        WELCOME_TEXT.format(name=name),
+        reply_markup=main_menu()
     )
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == 'start_signals':
-        await query.edit_message_text(
-            text=f"✅ Signals Activated!\n\nNext Session: 9:30 AM WAT\nChannel: {CHANNEL_USERNAME}\n\n{get_welcome_text(query.from_user.first_name)}",
-            reply_markup=get_main_keyboard()
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    
+    if q.data == 'my_id':
+        await q.edit_message_text(
+            text="🆔 HOW TO GET YOUR TRADING ID\n\n"
+                 "1. Click REGISTER WITH POCKET OPTION\n"
+                 "2. Register account\n"
+                 "3. Go to Profile -> Copy your ID (numbers)\n"
+                 "4. Paste the ID here for this bot\n\n"
+                 "Example: 12345678\n\n"
+                 "👉 Just type the ID now and send!",
+            reply_markup=main_menu()
         )
-    elif query.data == 'my_id':
-        await query.message.reply_text(f"🆔 Your Trading ID\n\nID: {query.from_user.id}\nName: {query.from_user.first_name}\nStatus: ✅ Registered")
-    elif query.data == 'how_it_works':
-        await query.message.reply_text("ℹ️ How it Works\n\n1️⃣ Click REGISTER HERE\n2️⃣ Click Start Signals\n3️⃣ Bot analyzes live market\n4️⃣ You get signal 9:30AM, 2:30PM, 8:30PM WAT\n5️⃣ Enter 3 MIN expiry")
+    elif q.data == 'how':
+        await q.edit_message_text(
+            text="ℹ️ HOW IT WORKS\n\n"
+                 "1. Register with Pocket Option\n"
+                 "2. Send your Trader ID here\n"
+                 "3. I go verify you\n"
+                 "4. You go get access to 9:30AM, 2:30PM, 8:30PM signals\n\n"
+                 "Need help? Contact " + ADMIN_USERNAME,
+            reply_markup=main_menu()
+        )
+    elif q.data == 'start_signals':
+        await q.edit_message_text(
+            text="✅ To start signals, you must send your Trading ID first!\n\n"
+                 "Have you registered? If yes, just type your ID and send here.",
+            reply_markup=main_menu()
+        )
 
-# --- FIXED SCHEDULER WITHOUT JOB_QUEUE ---
-async def signal_scheduler():
-    bot = Bot(token=BOT_TOKEN)
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        print("✅ Webhook deleted")
-    except Exception as e:
-        print(e)
-    while True:
-        try:
-            now = datetime.now(lagos)
-            if (now.hour == 9 and now.minute == 30) or (now.hour == 14 and now.minute == 30) or (now.hour == 20 and now.minute == 30):
-                if now.second < 10:
-                    await bot.send_message(
-                        chat_id=CHANNEL_ID,
-                        text="⭐ ENOCH PROFESSIONAL SIGNAL ⭐\n\n📊 EUR/USD\n🟢 BUY - CALL\n⏱️ Expiry: 3 MIN\n📈 Confidence: 92%\n🧠 Reason: Breakout + Volume Confirm\n\n⚠️ 1% Risk Only",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔗 REGISTER HERE", url=REGISTER_LINK)]])
-                    )
-                    await asyncio.sleep(65)
-            await asyncio.sleep(30)
-        except Exception as e:
-            print(e)
-            await asyncio.sleep(30)
+# THIS NA THE MAIN THING YOU WANT - BOT DEY REPLY PRIVATE MESSAGE
+async def handle_private_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+    trader_id = update.message.text
 
-async def post_init(application: Application):
-    asyncio.create_task(signal_scheduler())
+    # Reply to the user for private DM
+    await update.message.reply_text(
+        f"✅ Received! Thank you {user_name}\n\n"
+        f"Your Trader ID: {trader_id}\n\n"
+        f"I don forward am to admin. You go get confirmation soon for VIP!\n\n"
+        f"Keep your Telegram username open so {ADMIN_USERNAME} fit message you.",
+        reply_markup=main_menu()
+    )
+    
+    # Forward to you (admin) - You go see am for your private bot logs or you fit add ADMIN_CHAT_ID later
+    print(f"NEW ID RECEIVED: User {user_name} ({user_id}) sent ID: {trader_id}")
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    print("Bot started - Private Reply Mode ON")
+    app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    print("Bot started - Professional Mode")
+    app.add_handler(CallbackQueryHandler(buttons))
+    # This handler makes bot reply when person sends ID for private chat
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_id))
     app.run_polling()
 
 if __name__ == "__main__":
