@@ -5,7 +5,6 @@ import numpy as np
 from datetime import datetime, time
 import pytz
 from telegram import Bot
-from telegram.ext import Application
 import asyncio
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -32,7 +31,6 @@ SESSIONS = {
 
 reminded = {}
 
-# --- MANUAL INDICATORS (NO PANDAS_TA NEEDED) ---
 def ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
@@ -60,13 +58,10 @@ def atr(high, low, close, period=14):
 def analyze_real(pair_symbol):
     try:
         df = yf.download(pair_symbol, period="1d", interval="5m", progress=False, auto_adjust=True)
-        if len(df) < 60:
-            return None, "Low data", 0,0,0,0,0,0
-        
+        if len(df) < 60: return None, "Low data", 0,0,0,0,0,0
         close = df['Close']
         high = df['High']
         low = df['Low']
-        
         df['EMA20'] = ema(close, 20)
         df['EMA50'] = ema(close, 50)
         df['RSI'] = rsi(close, 14)
@@ -74,7 +69,6 @@ def analyze_real(pair_symbol):
         macd_line, signal_line = macd(close)
         df['MACD'] = macd_line
         df['SIGNAL'] = signal_line
-        
         last = df.iloc[-1]
         price = float(last['Close'])
         ema20 = float(last['EMA20'])
@@ -87,11 +81,9 @@ def analyze_real(pair_symbol):
         if price > ema20 > ema50 and 50 < rsi_v < 70 and macd_l > sig_l:
             reason = f"🟢 BULLISH BREAKOUT:\n├ Price break above EMA20 & EMA50\n├ RSI {rsi_v:.1f} UP momentum\n├ MACD bullish cross\n└ ATR support UP"
             return "BUY", reason, price, rsi_v, macd_l, atr_v, ema20, ema50
-        
         if price < ema20 < ema50 and 30 < rsi_v < 50 and macd_l < sig_l:
             reason = f"🔴 BEARISH BREAKDOWN:\n├ Price break below EMA20 & EMA50\n├ RSI {rsi_v:.1f} sellers control\n├ MACD bearish cross\n└ ATR confirms DOWN"
             return "SELL", reason, price, rsi_v, macd_l, atr_v, ema20, ema50
-            
         return None, f"Waiting breakout - Price {price:.5f} | RSI {rsi_v:.1f}", price, rsi_v, macd_l, atr_v, ema20, ema50
     except Exception as e:
         return None, str(e), 0,0,0,0,0,0
@@ -116,6 +108,13 @@ async def pro_scheduler():
     idx = 0
     pending_trade = None
     
+    # ✅ FIX CONFLICT - Delete webhook once at start
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("✅ Webhook deleted - No conflict")
+    except Exception as e:
+        print(f"Delete webhook error: {e}")
+
     while True:
         try:
             now = datetime.now(lagos)
@@ -144,7 +143,7 @@ async def pro_scheduler():
 
                 pair_name = pair_list[idx % len(pair_list)]
                 symbol = PAIRS[pair_name]
-                sig_type, reason, price, rsi, macd_v, atr_v, ema20, ema50 = analyze_real(symbol)
+                sig_type, reason, price, rsi_v, macd_v, atr_v, ema20, ema50 = analyze_real(symbol)
 
                 if sig_type:
                     emoji = "🟢⬆️" if sig_type == "BUY" else "🔴⬇️"
@@ -153,28 +152,17 @@ async def pro_scheduler():
                     sl = price - pip*7 if sig_type=="BUY" else price + pip*7
                     tp1 = price + pip*10 if sig_type=="BUY" else price - pip*10
                     tp2 = price + pip*20 if sig_type=="BUY" else price - pip*20
-
                     await bot.send_message(chat_id=CHANNEL_ID, text=f"👀 SETUP IDENTIFIED - {pair_name} 👀\n⏰ {now_str} | {current_session}\n💱 {pair_name} | {emoji} {sig_type}\n💰 Price: {price:.5f}\n🧠 {reason}\n⏳ NEXT: ENTER NOW in 5 mins")
                     pending_trade = {"pair": pair_name, "type": sig_type, "price": price, "sl": sl, "tp1": tp1, "tp2": tp2, "reason": reason, "emoji": emoji}
                 else:
-                    await bot.send_message(chat_id=CHANNEL_ID, text=f"🔍 SCAN | {pair_name} | ⏰ {now_str}\n💰 {price:.5f} | RSI {rsi:.1f}\n📝 {reason}\n❌ No breakout - Next in 5 mins")
+                    await bot.send_message(chat_id=CHANNEL_ID, text=f"🔍 SCAN | {pair_name} | ⏰ {now_str}\n💰 {price:.5f} | RSI {rsi_v:.1f}\n📝 {reason}\n❌ No breakout - Next in 5 mins")
                     idx += 1
                 await asyncio.sleep(300)
             else:
                 await asyncio.sleep(60)
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Scheduler error: {e}")
             await asyncio.sleep(30)
 
-async def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    await bot.delete_webhook(drop_pending_updates=True)
-    print("✅ Pro Bot v11 No pandas_ta - Started")
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
-    asyncio.create_task(pro_scheduler())
-    while True: await asyncio.sleep(3600)
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(pro_scheduler())
