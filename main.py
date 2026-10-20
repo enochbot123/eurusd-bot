@@ -22,7 +22,7 @@ BOT_TOKEN = BOT_TOKEN.strip()
 REGISTER_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
 CHANNEL_ID = -1003714315133
 WAT = ZoneInfo("Africa/Lagos")
-PAIRS = ["EUR/USD", "USD/JPY", "EUR/JPY", "AUD/USD", "USD/CAD", "NZD/USD"]
+PAIRS = ["EUR/USD", "USD/JPY", "EUR/JPY", "AUD/USD", "USD/CAD", "USD/JPY"]
 
 REASONS = [
     {"setup": "Breakout + Retest", "why": "Price don break strong resistance for M15, retest as support with volume confirm."},
