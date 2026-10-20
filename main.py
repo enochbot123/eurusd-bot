@@ -1,4 +1,5 @@
-import os, asyncio, random, requests
+import os, asyncio, random, requests, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timedelta
 import pytz
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
@@ -10,11 +11,27 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 PAIRS = ["AUD/USD", "EUR/USD", "USD/JPY", "EUR/JPY", "USD/CAD"]
 WAT = pytz.timezone("Africa/Lagos")
 AFFILIATE_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
-# I don set am for you - you no need change am!
-CHANNEL_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
-SUPPORT_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
+CHANNEL_LINK = AFFILIATE_LINK
+SUPPORT_LINK = AFFILIATE_LINK
 SESSIONS = ["09:30", "14:30", "20:30"]
 session_data = {"last_session": "", "next_index": 0}
+
+# FAKE WEB SERVER FOR RENDER - E GO MAKE THAT "NO PORT" MESSAGE COMOT
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Enoch Bot is Running!")
+    def log_message(self, format, *args):
+        return
+
+def run_fake_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
+    print(f"Fake web server running on port {port} to keep Render happy")
+    server.serve_forever()
+
+threading.Thread(target=run_fake_server, daemon=True).start()
 
 def get_price(pair):
     try:
@@ -39,40 +56,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ Verify My ID", callback_data="verify")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = f"""👋 Welcome {update.effective_user.first_name}!
-
-Welcome to Enoch's VIP Signals! 🚀
-
-To get signals you must:
-
-1️⃣ Register with my link below
-2️⃣ Get your Pocket Option ID
-3️⃣ Send /id YOUR_ID here
-
-After verification, you go dey get 5-minutes signals everyday!
-
-👇 Click buttons below:"""
+    text = f"👋 Welcome {update.effective_user.first_name}!\n\nWelcome to Enoch's VIP Signals! 🚀\n\nTo get signals:\n1️⃣ Register with my link\n2️⃣ Get your ID\n3️⃣ Send /id YOUR_ID\n\n👇 Click buttons below:"
     await update.message.reply_text(text, reply_markup=reply_markup)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == "how_id":
-        await query.message.reply_text("""🆔 HOW TO GET YOUR ID:
-
-1. Go Pocket Option App
-2. Click Profile
-3. Your ID dey there e.g. 12345678
-4. Copy am
-5. Come here type: /id 12345678""")
+        await query.message.reply_text("🆔 HOW TO GET ID:\n1. Go Pocket Option App\n2. Click Profile\n3. Copy ID e.g. 12345678\n4. Type /id 12345678")
     elif query.data == "verify":
-        await query.message.reply_text(f"""✅ VERIFY:
-
-Type: /id YOUR_ID
-
-Example: /id 12345678
-
-Link: {AFFILIATE_LINK}""")
+        await query.message.reply_text(f"✅ VERIFY:\nType: /id YOUR_ID\nExample: /id 12345678\nLink: {AFFILIATE_LINK}")
 
 async def set_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -90,14 +83,14 @@ async def send_signal(pair, bot, fast_mode=False):
         else: t1,t2,t3,t4 = 120,60,60,60
         await bot.send_message(chat_id=CHANNEL_ID, text=f"📊 PAIR TO WATCH!\n\n💰 PAIR: {pair}\n💵 PRICE: {live}\n🎯 SETUP: {setup}\n⏰ ENTRY: In next 5 mins!\n\nPrepare! 🔗 {AFFILIATE_LINK}")
         await asyncio.sleep(t1)
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"⏳ {pair} UPDATE!\n\n💰 PRICE: {get_price(pair)[0]}\n⏰ ENTRY: In next 3 mins!\n\nSetup dey form!")
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"⏳ {pair} UPDATE!\n💰 PRICE: {get_price(pair)[0]}\n⏰ ENTRY: In next 3 mins!\nSetup dey form!")
         await asyncio.sleep(t2)
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"⏳ {pair} UPDATE!\n\n🔥 {setup} confirmed!\n⏰ ENTRY: In next 2 mins!\n\nSet amount - {action} dey come!")
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"⏳ {pair} UPDATE!\n🔥 {setup} confirmed!\n⏰ ENTRY: In next 2 mins!\nSet amount - {action} dey come!")
         await asyncio.sleep(t3)
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"⚠️ {pair} FINAL!\n\n⏰ ENTRY: In next 1 min!\n💥 NEXT: {action}\n\nReady! Next na ENTER NOW! 🔥")
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"⚠️ {pair} FINAL!\n⏰ ENTRY: In next 1 min!\n💥 NEXT: {action}\nReady! Next na ENTER NOW! 🔥")
         await asyncio.sleep(t4)
         live2, prev2 = get_price(pair)
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"🚨 ENTER NOW!!! - {pair}\n\n{emoji} ACTION: {action}\n⏰ TIME: {datetime.now(WAT).strftime('%H:%M:%S WAT')}\n💰 PRICE: {live2} (Was {prev2})\n\n📊 SETUP: {setup}\n📈 CONFIDENCE: {random.randint(94,99)}%\n\n👉 CLICK NOW!\n\n🔗 {AFFILIATE_LINK}\n#{pair.replace('/','')}")
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"🚨 ENTER NOW!!! - {pair}\n\n{emoji} ACTION: {action}\n⏰ TIME: {datetime.now(WAT).strftime('%H:%M:%S WAT')}\n💰 PRICE: {live2} (Was {prev2})\n📊 SETUP: {setup}\n📈 CONFIDENCE: {random.randint(94,99)}%\n\n👉 CLICK NOW!\n🔗 {AFFILIATE_LINK}\n#{pair.replace('/','')}")
     except Exception as e:
         print(f"Signal error: {e}")
 
@@ -125,7 +118,7 @@ async def session_runner(bot):
 
 async def post_init(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
-    print("Ghost cleared - BOT WITH BUTTONS READY")
+    print("Ghost cleared - BOT WITH FAKE PORT READY - NO MORE NO PORT MESSAGE")
     asyncio.create_task(session_runner(app.bot))
 
 async def testsignal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,7 +135,7 @@ def main():
     app.add_handler(CommandHandler("id", set_id))
     app.add_handler(CommandHandler("testsignal", testsignal))
     app.add_handler(CallbackQueryHandler(button_callback))
-    print("Enoch Bot WITH PRIVATE BUTTONS READY")
+    print("Enoch Bot WITH PORT FIX READY")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
