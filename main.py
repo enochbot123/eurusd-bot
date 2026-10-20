@@ -1,11 +1,26 @@
-import os, asyncio, random, requests
+import os
+import asyncio
+import random
+import requests
+import io
 from datetime import datetime, timedelta
 import pytz
 from telegram.ext import Application, CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
-import matplotlib.pyplot as plt
-import io
+
+# Try import matplotlib, if e no dey, we go use Pillow
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except:
+    HAS_MATPLOTLIB = False
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except:
+    HAS_PIL = False
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -30,43 +45,53 @@ def get_real_price(pair):
         return round(p + random.uniform(-0.002, 0.002), 5), round(p, 5)
 
 def create_chart_image(pair, action, price):
-    plt.figure(figsize=(6,3))
-    prices = [price + random.uniform(-0.001, 0.001) for _ in range(30)]
-    color = "green" if "BUY" in action else "red"
-    plt.plot(prices, color=color, linewidth=2)
-    plt.title(f"{pair} - {action} - {price}", fontsize=10, fontweight='bold')
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150)
-    plt.close()
-    buf.seek(0)
-    return buf
+    try:
+        if HAS_MATPLOTLIB:
+            plt.figure(figsize=(6,3))
+            prices = [price + random.uniform(-0.001, 0.001) for _ in range(30)]
+            color = "green" if "BUY" in action else "red"
+            plt.plot(prices, color=color, linewidth=2)
+            plt.title(f"{pair} - {action} - {price}", fontsize=10, fontweight='bold')
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150)
+            plt.close()
+            buf.seek(0)
+            return buf
+        elif HAS_PIL:
+            img = Image.new('RGB', (600, 300), color = (255, 255, 255))
+            d = ImageDraw.Draw(img)
+            d.text((10,10), f"{pair} - {action} - {price}", fill=(0,0,0))
+            d.text((10,50), f"LIVE CHART - {action}", fill=(255,0,0) if "SELL" in action else (0,128,0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            return buf
+        else:
+            return None
+    except:
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"👋 Welcome! Register: {AFFILIATE_LINK} Then /id YOUR_ID")
+    await update.message.reply_text(f"Welcome {update.effective_user.first_name}! Register: {AFFILIATE_LINK} Then send /id YOUR_ID")
 
 async def set_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ Use: /id 12345678")
+        await update.message.reply_text("Use: /id 12345678")
         return
-    await update.message.reply_text(f"✅ ID {context.args[0]} saved!")
+    await update.message.reply_text(f"ID {context.args[0]} saved! We go verify.")
 
-# === YOUR VOICE NOTE FLOW - 5 MINS WITH UPDATES ===
 async def send_signal(pair, bot, fast_mode=False):
     live, prev = get_real_price(pair)
     setup = random.choice(["Support Bounce at Demand", "Resistance at Supply", "Breakpoint Retest"])
     action = "SELL PUT" if live > prev else "BUY CALL"
-    buy_sell_emoji = "🔴 SELL" if "SELL" in action else "🟢 BUY"
 
     if fast_mode:
-        # For testsignal - total 40 secs: 10 + 10 + 10 + 10
         t1, t2, t3, t4 = 10, 10, 10, 10
     else:
-        # For real session - total 5 mins: 2 mins + 1 min + 1 min + 1 min = 5 mins
         t1, t2, t3, t4 = 120, 60, 60, 60
 
-    # STAGE 1 - 0 MIN - 5 MINS EXPECTING
     msg1 = f"""📊 PAIR TO WATCH - GET READY!
 
 💰 PAIR: {pair}
@@ -80,7 +105,6 @@ Prepare your chart - Don't enter yet!
     await bot.send_message(chat_id=CHANNEL_ID, text=msg1)
     await asyncio.sleep(t1)
 
-    # STAGE 2 - 3 MINS EXPECTING (after 2 mins)
     msg2 = f"""⏳ {pair} UPDATE!
 
 💰 PRICE NOW: {get_real_price(pair)[0]}
@@ -92,7 +116,6 @@ Stay tuned!"""
     await bot.send_message(chat_id=CHANNEL_ID, text=msg2)
     await asyncio.sleep(t2)
 
-    # STAGE 3 - 2 MINS EXPECTING
     msg3 = f"""⏳ {pair} UPDATE!
 
 🔥 {setup} confirmed!
@@ -104,7 +127,6 @@ Final preparation!"""
     await bot.send_message(chat_id=CHANNEL_ID, text=msg3)
     await asyncio.sleep(t3)
 
-    # STAGE 4 - 1 MIN FINAL WARNING
     msg4 = f"""⚠️ {pair} - FINAL WARNING!
 
 ⏰ ENTRY: In the next 1 minute!
@@ -116,7 +138,6 @@ Next message na ENTER NOW! 🔥🔥🔥"""
     await bot.send_message(chat_id=CHANNEL_ID, text=msg4)
     await asyncio.sleep(t4)
 
-    # STAGE 5 - ENTER NOW + REASON + CHART + EMOJI
     live_final, prev_final = get_real_price(pair)
     if "Support" in setup or "Demand" in setup:
         reason = f"Price hit DEMAND ZONE breakpoint at {live_final}. Strong bullish rejection at {prev_final}. Buyers dey push - We go UP!"
@@ -124,6 +145,8 @@ Next message na ENTER NOW! 🔥🔥🔥"""
         reason = f"Price hit SUPPLY ZONE breakpoint at {live_final}. Bearish rejection confirmed at {prev_final}. Sellers control - We go DOWN!"
     else:
         reason = f"Price BREAKOUT level {prev_final} and retesting {live_final}. Classic breakpoint retest - Continuation!"
+
+    buy_sell_emoji = "🔴 SELL" if "SELL" in action else "🟢 BUY"
 
     caption = f"""🚨 ENTER NOW!!! - {pair}
 
@@ -140,11 +163,17 @@ Next message na ENTER NOW! 🔥🔥🔥"""
 👉 CLICK NOW AND {action}!
 
 🔗 {AFFILIATE_LINK}
-#{pair.replace('/','')} #PocketOption"""
+#{pair.replace('/','')}"""
 
-    chart_buf = create_chart_image(pair, action, live_final)
-    await bot.send_photo(chat_id=CHANNEL_ID, photo=chart_buf, caption=caption)
-    print(f"ENTER NOW SENT {pair}")
+    try:
+        chart_buf = create_chart_image(pair, action, live_final)
+        if chart_buf:
+            await bot.send_photo(chat_id=CHANNEL_ID, photo=chart_buf, caption=caption)
+        else:
+            await bot.send_message(chat_id=CHANNEL_ID, text=caption)
+    except Exception as e:
+        print(f"Chart error: {e}")
+        await bot.send_message(chat_id=CHANNEL_ID, text=caption)
 
 async def session_runner(bot):
     while True:
@@ -166,7 +195,6 @@ async def session_runner(bot):
         await asyncio.sleep(20)
 
 async def post_init(app):
-    # KILL CONFLICT PERMANENTLY
     await app.bot.delete_webhook(drop_pending_updates=True)
     print("Ghost cleared - 5 min multi-update flow ready")
     asyncio.create_task(session_runner(app.bot))
@@ -174,7 +202,7 @@ async def post_init(app):
 async def testsignal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if session_data["next_index"] >= len(PAIRS): session_data["next_index"] = 0
     pair = PAIRS[session_data["next_index"]]
-    await update.message.reply_text(f"✅ Starting CORRECT 5-min flow for {pair}: 5 mins -> 3 mins -> 2 mins -> 1 min -> ENTER NOW. For test na 40 secs total. Watch channel!")
+    await update.message.reply_text(f"✅ Starting CORRECT 5-min flow for {pair}: 5m -> 3m -> 2m -> 1m -> ENTER NOW. For test na 40 secs total. Watch channel!")
     await send_signal(pair, context.bot, fast_mode=True)
     session_data["next_index"] += 1
 
@@ -183,7 +211,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id", set_id))
     app.add_handler(CommandHandler("testsignal", testsignal))
-    print("Enoch Bot - 5 STAGE FLOW: 5m -> 3m -> 2m -> 1m -> ENTER NOW with chart")
+    print("Enoch Bot - 5 STAGE FLOW READY")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
