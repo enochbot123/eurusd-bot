@@ -1,189 +1,207 @@
-import os, asyncio, random, requests, threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from datetime import datetime, timedelta
+import os
+import asyncio
+import random
+from datetime import datetime
 import pytz
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.constants import ParseMode
 
-TOKEN = os.getenv("BOT_TOKEN","").strip()
-CHANNEL_ID = os.getenv("CHANNEL_ID","").strip().replace("\n","").replace("\r","").replace(" ","")
-PAIRS = ["AUD/USD", "EUR/USD", "USD/JPY", "EUR/JPY", "USD/CAD"]
-WAT = pytz.timezone("Africa/Lagos")
-AFFILIATE_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
-SESSIONS = ["09:30", "14:30", "20:30"]
-session_data = {"last_session": "", "next_index": 0}
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+POCKET_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
 
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200); self.end_headers(); self.wfile.write(b"Enoch Pro SMC Bot Running!")
-    def log_message(self, *a): return
-def run_fake_server():
-    HTTPServer(('0.0.0.0', int(os.environ.get("PORT",10000))), SimpleHandler).serve_forever()
-threading.Thread(target=run_fake_server, daemon=True).start()
+LAGOS = pytz.timezone("Africa/Lagos")
 
-def get_price(pair):
-    try:
-        sym = pair.replace("/","")
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}=X?interval=1m&range=1d"
-        r = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=8)
-        d = r.json()
-        p = d['chart']['result'][0]['meta']['regularMarketPrice']
-        prev = d['chart']['result'][0]['meta']['previousClose']
-        return float(p), float(prev)
-    except:
-        base = {"AUD/USD":0.698,"EUR/USD":1.084,"USD/JPY":154.2,"EUR/JPY":167.1,"USD/CAD":1.365}
-        b = base.get(pair,1.0); return round(b+random.uniform(-0.002,0.002),5), round(b,5)
-
-# REAL PROFESSIONAL ICT/SMC SETUPS - AS YOU WANT
-PRO_SETUPS = [
-    {
-      "name": "Bullish Order Block + FVG",
-      "desc": "Price don sweep sell-side liquidity for M15, tap bullish Order Block, leave Fair Value Gap. M1 BOS don confirm.",
-      "why_buy": "Institutional buying for OB, FVG must fill, liquidity grab done. Buyers in control after sweep.",
-      "why_sell": ""
-    },
-    {
-      "name": "Bearish Order Block + MSS",
-      "desc": "Price don sweep buy-side liquidity, hit bearish Order Block for H1, Market Structure Shift for M5 with bearish FVG.",
-      "why_sell": "Sell-side pressure from OB, MSS confirm downtrend, smart money selling into premium.",
-      "why_buy": ""
-    },
-    {
-      "name": "Liquidity Sweep + Reversal",
-      "desc": "Stop hunt don happen - price sweep equal highs/lows for M15, instant rejection with engulfing, volume spike.",
-      "why_buy": "Liquidity sweep done, reversal wick + bullish engulfing, stop hunters out, real move start.",
-      "why_sell": "Double top liquidity sweep, rejection for premium zone, bears step in."
-    },
-    {
-      "name": "Breakout + Retest + BOS",
-      "desc": "Strong M15 Break of Structure, price break resistance, retest with 50% OB, continuation confirm for M3.",
-      "why_buy": "BOS confirm bullish, retest hold, continuation leg starting - institutional continuation.",
-      "why_sell": "BOS bearish break, retest fail, continuation down."
-    },
-    {
-      "name": "ICT Killzone + Silver Bullet",
-      "desc": "London/NY Killzone active, Silver Bullet entry - price for discount/premium of daily range, optimal trade entry.",
-      "why_buy": "Killzone liquidity + discount array, time + price alignment, high probability long.",
-      "why_sell": "Killzone + premium array, time based manipulation complete, short opportunity."
-    }
+SESSIONS = [
+    {"name": "MORNING SESSION ☀️", "start": "09:30", "end": "11:30"},
+    {"name": "AFTERNOON SESSION 🌤️", "start": "14:30", "end": "16:30"},
+    {"name": "NIGHT SESSION 🌙", "start": "20:30", "end": "22:30"},
 ]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [
-        [InlineKeyboardButton("🔗 Register Pocket Option", url=AFFILIATE_LINK)],
-        [InlineKeyboardButton("📢 Join My Channel", url=AFFILIATE_LINK)],
-        [InlineKeyboardButton("🆔 How to Get ID", callback_data="how_id")],
-        [InlineKeyboardButton("💬 Contact Support", url=AFFILIATE_LINK)],
-        [InlineKeyboardButton("✅ Verify My ID", callback_data="verify")]
-    ]
-    await update.message.reply_text(f"👋 Welcome {update.effective_user.first_name}!\n\nWelcome to Enoch's SMC/ICT VIP Signals! 🚀\n\nProfessional System: Order Blocks, FVG, Liquidity\n\n1️⃣ Register with link\n2️⃣ Get ID\n3️⃣ /id YOUR_ID", reply_markup=InlineKeyboardMarkup(kb))
+# 10 SHARP PAIRS - NO GBP/USD, NO GOLD
+PAIRS = [
+    "EUR/USD",
+    "AUD/USD",
+    "USD/JPY",
+    "EUR/JPY",
+    "USD/CAD",
+    "USD/CHF",
+    "AUD/CAD",
+    "EUR/AUD",
+    "AUD/JPY",
+    "EUR/CAD"
+]
 
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
-    if q.data == "how_id": await q.message.reply_text("🆔 HOW TO GET ID:\nPocket Option App > Profile > Copy ID > /id 12345678")
-    elif q.data == "verify": await q.message.reply_text(f"✅ Type: /id YOUR_ID\nLink: {AFFILIATE_LINK}")
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = f"""
+🔥 **ENOCH PROFESSIONAL SIGNALS** 🔥
+━━━━━━━━━━━━━━━━━━━━━━
+Welcome {update.effective_user.first_name}! 👋
 
-async def set_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text("❌ Use: /id 12345678"); return
-    await update.message.reply_text(f"✅ ID {context.args[0]} received! Verifying...")
+You wan make money with my sharp signals? Follow this 3 steps 👇
 
-# PROFESSIONAL SIGNAL WITH 1 MIN WAIT - REAL SMC/ICT LANGUAGE
-async def send_signal(pair, bot):
+**STEP 1️⃣ - REGISTER (Important!)**
+You MUST register with my link to get signals working well:
+👉 {POCKET_LINK}
+
+⚠️ If you no use my link, signals fit no sync well! Pocket dey give my link special payout!
+
+**STEP 2️⃣ - DEPOSIT**
+- Minimum na $10
+- For Naija use Crypto (USDT) or AirTM - fast!
+
+**STEP 3️⃣ - HOW TO USE SIGNAL**
+1. Bot go send: PAIR TO WATCH
+2. Wait 60 seconds
+3. Bot go send: ENTER NOW CALL/PUT
+4. Enter immediately for 1 min expiry
+
+━━━━━━━━━━━━━━━━━━━━━━
+**⏰ SIGNAL TIMES (Lagos):**
+☀️ 09:30-11:30 | 🌤️ 14:30-16:30 | 🌙 20:30-22:30
+
+**🎯 10 SHARP PAIRS:**
+EUR/USD, AUD/USD, USD/JPY, EUR/JPY, USD/CAD + 5 more
+❌ No GBP/USD, No Gold
+✅ Only 82-96% Payout
+
+**💰 RISK CALC:**
+Type /risk 10 - e go show you how much to stake
+
+**Click to Register Now 👇**
+👉 {POCKET_LINK}
+━━━━━━━━━━━━━━━━━━━━━━
+"""
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+async def risk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        live, prev = get_price(pair)
-        setup = random.choice(PRO_SETUPS)
-        is_buy = live > prev or random.choice([True,False])
-        direction = "BUY 📈 CALL" if is_buy else "SELL 📉 PUT"
-        conf = random.randint(94,99)
-        now_time = datetime.now(WAT).strftime('%H:%M')
+        if not context.args:
+            await update.message.reply_text("💰 **Use am like:**\n\n/risk 10 - for $10\n/risk 50 - for $50", parse_mode=ParseMode.MARKDOWN)
+            return
+        balance = float(context.args[0])
+        safe_stake = round(balance * 0.05, 2)
+        pro_stake = round(balance * 0.03, 2)
+        daily_target = round(safe_stake * 4, 2)
+        max_loss = round(balance * 0.15, 2)
+        msg = f"""
+💰 **RISK CALC FOR ${balance}**
+━━━━━━━━━━━━━━━━━━━━━━
+**Balance:** ${balance}
+
+**✅ RECOMMENDED (5%):**
+Stake: **${safe_stake}**
+Daily Target: **${daily_target}**
+Stop Loss: **${max_loss}**
+
+**🛡️ SAFEST (3%):**
+Stake: **${pro_stake}**
+
+**Register here 👇**
+{POCKET_LINK}
+━━━━━━━━━━━━━━━━━━━━━━
+"""
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    except:
+        await update.message.reply_text("Use: /risk 10")
+
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now(LAGOS).strftime("%H:%M:%S")
+    await update.message.reply_text(f"✅ **Bot LIVE**\n🕒 {now} WAT\n🔥 10 Sharp Pairs\n💰 Link: {POCKET_LINK}", parse_mode=ParseMode.MARKDOWN)
+
+async def test_signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🧪 Sending test...")
+    await send_professional_signal(context.bot)
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower().strip()
+    if text in ["start", "hello", "hi", "help", "menu", "register", "link"]:
+        await start_cmd(update, context)
+    elif "risk" in text:
+        try:
+            parts = text.split()
+            if len(parts) > 1:
+                context.args = [parts[1]]
+                await risk_cmd(update, context)
+            else:
+                await update.message.reply_text("Type: risk 10 or /risk 10")
+        except:
+            pass
+
+async def send_professional_signal(bot):
+    try:
+        payout = random.randint(82, 96)
+        if payout < 82:
+            return
+        pair = random.choice(PAIRS)
+        direction = random.choice(["CALL 🔼", "PUT 🔽"])
         
-        # PAIR TO WATCH - WITH PROFESSIONAL SETUP
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"""🔍 PAIR TO WATCH! {now_time} WAT | ICT KILLZONE
+        msg1 = f"""
+🔔 **{pair} - SETUP LOADING**
+━━━━━━━━━━━━━━━━
+⏳ **ACTION:** PAIR TO WATCH
+💰 **Payout:** {payout}%
+⏱️ **Expiry:** 1 MIN
+📊 **Confidence:** HIGH ⭐⭐⭐
 
-📊 PAIR: {pair}
-💰 LIVE PRICE: {live} (Prev Close {prev})
-🎯 SETUP: {setup['name']}
-📝 ANALYSIS: {setup['desc']}
-
-🧠 SMC NOTE: Look for {setup['name']} for M5/M15
-⏰ ENTRY WINDOW: Next 60 Seconds - Prepare Chart!
-
-👉 Action: Open {pair} for M1, wait for my ENTER NOW!
-
-⚡ Professional SMC/ICT System - Enoch""")
-
-        print(f"PAIR TO WATCH {pair} {setup['name']} - 60s wait")
+⚠️ **DO NOT ENTER YET!**
+Wait 60s...
+━━━━━━━━━━━━━━━━
+"""
+        sent1 = await bot.send_message(chat_id=CHANNEL_ID, text=msg1, parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(60)
+        
+        msg2 = f"""
+🚀 **ENTER NOW - {pair}**
+━━━━━━━━━━━━━━━━
+💥 **DIRECTION:** {direction}
+💰 **Payout:** {payout}%
+⏱️ **Expiry:** 1 MIN
+🎯 **Entry:** IMMEDIATELY!
 
-        # ENTER NOW - WITH REAL REASON
-        live2, prev2 = get_price(pair)
-        now2 = datetime.now(WAT).strftime('%H:%M:%S')
-        reason = setup['why_buy'] if is_buy else setup['why_sell']
-        if not reason: reason = setup['desc']
+✅ **SHARP SIGNAL**
+━━━━━━━━━━━━━━━━
+"""
+        await bot.send_message(chat_id=CHANNEL_ID, text=msg2, parse_mode=ParseMode.MARKDOWN)
+        await asyncio.sleep(180)
+        try:
+            await bot.delete_message(chat_id=CHANNEL_ID, message_id=sent1.message_id)
+        except:
+            pass
+    except Exception:
+        return
 
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"""🚀 ENTER NOW!!! SMC/ICT SIGNAL 🚀
-⏰ TIME: {now2} WAT | AFTER 1 MIN ANALYSIS
-
-📊 PAIR: {pair}
-💰 LIVE ENTRY PRICE: {live2} (Was {prev2})
-📋 DIRECTION: {direction}
-⏰ EXPIRY: 3 MINUTES [M3] - ICT Standard
-🎯 SETUP: {setup['name']}
-📊 CONFIDENCE: {conf}% | ICT Model
-⏱️ KILLZONE: {'London' if datetime.now(WAT).hour < 14 else 'NY'} Session Active
-
-🔍 PROFESSIONAL ANALYSIS:
-• Market: {setup['desc']}
-• Why {('BUY' if is_buy else 'SELL')}: {reason}
-• Confluence: OB + FVG + Liquidity Sweep + BOS
-• Risk: 1% | Martingale: 1 Step Only
-• Structure: M15 {('Bullish' if is_buy else 'Bearish')} BOS Confirmed
-
-🎯 EXECUTION:
-Enter for NEXT M1 candle open immediately!
-M3 Expiry = Capture ICT expansion leg!
-
-🔗 TRADE NOW: {AFFILIATE_LINK}
-
-⭐ Enoch ICT Pro | SMC + Liquidity | Real Market Data""")
-
-    except Exception as e: print(f"Signal Error: {e}")
-
-async def session_runner(bot):
+async def session_manager(app):
+    await asyncio.sleep(10)
+    print("✅ Enoch Bot LIVE with affiliate link")
     while True:
         try:
-            now = datetime.now(WAT); cur = now.strftime("%H:%M"); today = now.strftime("%Y-%m-%d")
-            if cur in SESSIONS and session_data["last_session"] != f"{today}_{cur}":
-                session_data["last_session"]=f"{today}_{cur}"; session_data["next_index"]=0
-            for sess in SESSIONS:
-                sh,sm = map(int,sess.split(":"))
-                s_start = now.replace(hour=sh,minute=sm,second=0,microsecond=0)
-                s_end = s_start + timedelta(hours=1)
-                if s_start <= now <= s_end and session_data["next_index"] < len(PAIRS):
-                    await send_signal(PAIRS[session_data["next_index"]], bot)
-                    session_data["next_index"]+=1; await asyncio.sleep(120); break
-        except Exception as e: print(e)
-        await asyncio.sleep(20)
-
-async def post_init(app):
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    print("Enoch Pro SMC Bot Ready - Professional Setups Loaded")
-    asyncio.create_task(session_runner(app.bot))
-
-async def testsignal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if session_data["next_index"] >= len(PAIRS): session_data["next_index"]=0
-    pair = PAIRS[session_data["next_index"]]
-    await update.message.reply_text(f"✅ Testing PROFESSIONAL SMC/ICT for {pair} - PAIR TO WATCH + 60s + ENTER NOW with real analysis!")
-    await send_signal(pair, context.bot); session_data["next_index"]+=1
+            now = datetime.now(LAGOS)
+            current_time = now.strftime("%H:%M")
+            active = None
+            for s in SESSIONS:
+                if s["start"] <= current_time <= s["end"]:
+                    active = s
+                    break
+            if active:
+                await send_professional_signal(app.bot)
+                await asyncio.sleep(random.randint(240, 360))
+            else:
+                await asyncio.sleep(60)
+        except Exception:
+            await asyncio.sleep(60)
 
 def main():
-    app = Application.builder().token(TOKEN).build()
-    app.post_init = post_init
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("id", set_id))
-    app.add_handler(CommandHandler("testsignal", testsignal))
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.run_polling(drop_pending_updates=True)
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CommandHandler("testsignal", test_signal))
+    app.add_handler(CommandHandler("risk", risk_cmd))
+    app.add_handler(CommandHandler("calc", risk_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.job_queue.run_once(lambda ctx: asyncio.create_task(session_manager(app)), 1)
+    app.run_polling()
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
