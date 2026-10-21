@@ -1,205 +1,96 @@
 import os
 import asyncio
 import random
+import threading
 from datetime import datetime
 import pytz
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from telegram.constants import ParseMode
+from flask import Flask
 
-# CLEAN ENV - comot dirty spaces wey cause InvalidURL
+flask_app = Flask(__name__)
+@flask_app.route('/')
+def home():
+    return "✅ Enoch Bot LIVE - UptimeRobot should see UP"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host='0.0.0.0', port=port)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHANNEL_ID = os.getenv("CHANNEL_ID", "").strip()
 POCKET_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
 
-print(f"BOT_TOKEN loaded: {len(BOT_TOKEN)} chars")
-print(f"CHANNEL_ID loaded: '{CHANNEL_ID}'")
-
 LAGOS = pytz.timezone("Africa/Lagos")
-
 SESSIONS = [
-    {"name": "MORNING SESSION ☀️", "start": "09:30", "end": "11:30"},
-    {"name": "AFTERNOON SESSION 🌤️", "start": "14:30", "end": "16:30"},
-    {"name": "NIGHT SESSION 🌙", "start": "20:30", "end": "22:30"},
+    {"start": "09:30", "end": "11:30"},
+    {"start": "14:30", "end": "16:30"},
+    {"start": "20:30", "end": "22:30"},
 ]
-
-# 10 SHARP PAIRS - NO GBP/USD, NO GOLD
-PAIRS = [
-    "EUR/USD",
-    "AUD/USD",
-    "USD/JPY",
-    "EUR/JPY",
-    "USD/CAD",
-    "USD/CHF",
-    "AUD/CAD",
-    "EUR/AUD",
-    "AUD/JPY",
-    "EUR/CAD"
-]
+PAIRS = ["EUR/USD","AUD/USD","USD/JPY","EUR/JPY","USD/CAD","USD/CHF","AUD/CAD","EUR/AUD","AUD/JPY","EUR/CAD"]
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = f"""
-🔥 **ENOCH PROFESSIONAL SIGNALS** 🔥
-━━━━━━━━━━━━━━━━━━━━━━
-Welcome {update.effective_user.first_name}! 👋
-
-You wan make money with my sharp signals? Follow 3 steps 👇
-
-**STEP 1️⃣ - REGISTER (Important!)**
-You MUST register with my link to get signals working well:
-👉 {POCKET_LINK}
-
-⚠️ If you no use my link, signals fit no sync well!
-
-**STEP 2️⃣ - DEPOSIT**
-- Minimum na $10
-- For Naija use Crypto (USDT) - fast!
-
-**STEP 3️⃣ - HOW TO USE SIGNAL**
-1. Bot go send: PAIR TO WATCH
-2. Wait 60 seconds
-3. Bot go send: ENTER NOW CALL/PUT
-4. Enter immediately for 1 min expiry
-
-━━━━━━━━━━━━━━━━━━━━━━
-**⏰ SIGNAL TIMES (Lagos):**
-☀️ 09:30-11:30 | 🌤️ 14:30-16:30 | 🌙 20:30-22:30
-
-**🎯 10 SHARP PAIRS:**
-EUR/USD, AUD/USD, USD/JPY + 7 more
-❌ No GBP/USD, No Gold
-✅ Only 82-96% Payout
-
-**💰 RISK CALC:**
-Type /risk 10 - e go show you how much to stake
-
-**Click to Register Now 👇**
-👉 {POCKET_LINK}
-━━━━━━━━━━━━━━━━━━━━━━
-"""
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(f"🔥 **ENOCH SIGNALS** 🔥\n\nRegister here 👉 {POCKET_LINK}\n\n💰 Type /risk 10\n⏰ 09:30-11:30, 14:30-16:30, 20:30-22:30 WAT", parse_mode=ParseMode.MARKDOWN)
 
 async def risk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
-            await update.message.reply_text("💰 **Use am like:**\n\n/risk 10 - for $10 account\n/risk 50 - for $50 account", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("💰 Use: /risk 10 or /risk 50", parse_mode=ParseMode.MARKDOWN)
             return
-        balance = float(context.args[0])
-        safe_stake = round(balance * 0.05, 2)
-        pro_stake = round(balance * 0.03, 2)
-        daily_target = round(safe_stake * 4, 2)
-        max_loss = round(balance * 0.15, 2)
-        msg = f"""
-💰 **RISK CALC FOR ${balance}**
-━━━━━━━━━━━━━━━━━━━━━━
-**Balance:** ${balance}
-
-**✅ RECOMMENDED (5%):**
-Stake: **${safe_stake}**
-Daily Target: **${daily_target}**
-Stop Loss: **${max_loss}**
-
-**🛡️ SAFEST (3%):**
-Stake: **${pro_stake}**
-
-**Register here 👇**
-{POCKET_LINK}
-━━━━━━━━━━━━━━━━━━━━━━
-"""
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+        b = float(context.args[0])
+        await update.message.reply_text(f"💰 **${b} Account**\n\n✅ 5%: ${round(b*0.05,2)}\n🛡️ 3%: ${round(b*0.03,2)}\n🎯 Target: ${round(b*0.2,2)}\n🛑 Stop: ${round(b*0.15,2)}\n\n{POCKET_LINK}", parse_mode=ParseMode.MARKDOWN)
     except:
         await update.message.reply_text("Use: /risk 10")
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    now = datetime.now(LAGOS).strftime("%H:%M:%S")
-    await update.message.reply_text(f"✅ **Bot LIVE**\n🕒 {now} WAT\n🔥 10 Sharp Pairs\n💰 Link: {POCKET_LINK}", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("✅ Bot LIVE - Flask Active")
 
 async def test_signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🧪 Sending test signal to channel...")
+    await update.message.reply_text("🧪 Sending...")
     await send_professional_signal(context.bot)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower().strip()
-    if text in ["start", "hello", "hi", "help", "menu", "register", "link"]:
+    if update.message.text.lower().strip() in ["start","hi","hello","help","link","menu"]:
         await start_cmd(update, context)
-    elif "risk" in text:
-        try:
-            parts = text.split()
-            if len(parts) > 1:
-                context.args = [parts[1]]
-                await risk_cmd(update, context)
-            else:
-                await update.message.reply_text("Type: /risk 10")
-        except:
-            pass
 
 async def send_professional_signal(bot):
     try:
-        payout = random.randint(82, 96)
-        pair = random.choice(PAIRS)
-        direction = random.choice(["CALL 🔼", "PUT 🔽"])
-        
-        msg1 = f"""
-🔔 **{pair} - SETUP LOADING**
-━━━━━━━━━━━━━━━━
-⏳ **ACTION:** PAIR TO WATCH
-💰 **Payout:** {payout}%
-⏱️ **Expiry:** 1 MIN
-📊 **Confidence:** HIGH ⭐⭐⭐
-
-⚠️ **DO NOT ENTER YET!**
-Wait 60s...
-━━━━━━━━━━━━━━━━
-"""
-        sent1 = await bot.send_message(chat_id=CHANNEL_ID, text=msg1, parse_mode=ParseMode.MARKDOWN)
+        payout=random.randint(82,96)
+        pair=random.choice(PAIRS)
+        direction=random.choice(["CALL 🔼","PUT 🔽"])
+        m1=await bot.send_message(chat_id=CHANNEL_ID, text=f"🔔 **{pair} SETUP**\n💰 {payout}% - Wait 60s...", parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(60)
-        
-        msg2 = f"""
-🚀 **ENTER NOW - {pair}**
-━━━━━━━━━━━━━━━━
-💥 **DIRECTION:** {direction}
-💰 **Payout:** {payout}%
-⏱️ **Expiry:** 1 MIN
-🎯 **Entry:** IMMEDIATELY!
-
-✅ **SHARP SIGNAL**
-━━━━━━━━━━━━━━━━
-"""
-        await bot.send_message(chat_id=CHANNEL_ID, text=msg2, parse_mode=ParseMode.MARKDOWN)
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 **ENTER NOW {pair}**\n💥 {direction}\n💰 {payout}% - 1 MIN", parse_mode=ParseMode.MARKDOWN)
         await asyncio.sleep(180)
         try:
-            await bot.delete_message(chat_id=CHANNEL_ID, message_id=sent1.message_id)
+            await bot.delete_message(chat_id=CHANNEL_ID, message_id=m1.message_id)
         except:
             pass
     except Exception as e:
-        print(f"Signal error: {e}")
-        return
+        print(e)
 
 async def session_manager(app):
     await asyncio.sleep(10)
-    print("✅ Bot Started Clean - No Conflict")
+    print("✅ Bot with Website Ready")
     while True:
         try:
-            now = datetime.now(LAGOS)
-            current_time = now.strftime("%H:%M")
-            active = False
-            for s in SESSIONS:
-                if s["start"] <= current_time <= s["end"]:
-                    active = True
-                    break
+            cur=datetime.now(LAGOS).strftime("%H:%M")
+            active=any(s["start"] <= cur <= s["end"] for s in SESSIONS)
             if active:
                 await send_professional_signal(app.bot)
-                await asyncio.sleep(random.randint(240, 360))
+                await asyncio.sleep(random.randint(240,360))
             else:
                 await asyncio.sleep(60)
         except Exception as e:
-            print(f"Loop error: {e}")
+            print(e)
             await asyncio.sleep(60)
 
 async def post_init(app):
     asyncio.create_task(session_manager(app))
 
 def main():
+    threading.Thread(target=run_flask, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
@@ -207,8 +98,8 @@ def main():
     app.add_handler(CommandHandler("risk", risk_cmd))
     app.add_handler(CommandHandler("calc", risk_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    print("Polling started...")
-    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    print("Starting with Flask on port...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
