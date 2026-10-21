@@ -20,13 +20,15 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Enoch Full Button Pro Bot Running!")
+        self.wfile.write(b"Enoch Bot Running!")
     def log_message(self, format, *args):
         return
+
 def run_fake_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), SimpleHandler)
     server.serve_forever()
+
 threading.Thread(target=run_fake_server, daemon=True).start()
 
 def get_price(pair):
@@ -49,7 +51,6 @@ SETUPS = {
     "Resistance Rejection": "Price don hit strong resistance for M15, bearish engulfing dey form."
 }
 
-# FULL BUTTONS AS YOU WANT - PRIVATE /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔗 Register Pocket Option", url=AFFILIATE_LINK)],
@@ -76,7 +77,6 @@ async def set_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(f"✅ ID {context.args[0]} received! We dey verify...")
 
-# PROFESSIONAL 1 MIN WAIT - PAIR TO WATCH → WAIT 60 SECS → ENTER NOW
 async def send_signal(pair, bot):
     try:
         live, prev = get_price(pair)
@@ -86,47 +86,16 @@ async def send_signal(pair, bot):
         direction = "BUY 📈 CALL" if is_buy else "SELL 📉 PUT"
         now_time = datetime.now(WAT).strftime('%H:%M')
 
-        # 1️⃣ PAIR TO WATCH - 6:46
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"""🔍 PAIR TO WATCH! {now_time} WAT
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"🔍 PAIR TO WATCH! {now_time} WAT\n\n📊 PAIR: {pair}\n✅ REAL PRICE: {live} (Was {prev})\n📈 SETUP: {setup_name}\n📝 {setup_desc}\n\n⏰ ENTRY: In next 1 MINUTE - Prepare now!\n👉 Open {pair} for Pocket Option, select M1!\n\nWait 1 minute...")
 
-📊 PAIR: {pair}
-✅ REAL PRICE: {live} (Was {prev})
-📈 SETUP: {setup_name}
-📝 {setup_desc}
-
-⏰ ENTRY: In next 1 MINUTE - Prepare now!
-👉 Open {pair} for Pocket Option, select M1!
-
-Wait 1 minute...""")
-        
-        print(f"PAIR TO WATCH sent for {pair} - waiting 60 secs...")
+        print(f"PAIR TO WATCH {pair} - waiting 60 secs...")
         await asyncio.sleep(60)
 
-        # 2️⃣ ENTER NOW - 6:47 AFTER 1 MIN
         live2, prev2 = get_price(pair)
         now_time2 = datetime.now(WAT).strftime('%H:%M:%S')
         why = f"{'BUY' if is_buy else 'SELL'} Reason: {setup_desc} Price move from {prev2} to {live2}."
-        
-        await bot.send_message(chat_id=CHANNEL_ID, text=f"""🚀 ENTER NOW!!! REAL MARKET SIGNAL 🚀
-⏰ TIME: {now_time2} WAT (After 1 min wait)
 
-📊 PAIR: {pair}
-✅ REAL PRICE: {live2} (LIVE - Was {prev2})
-📋 DIRECTION: {direction}
-⏰ EXPIRY: 3 MINUTES [M3]
-📈 SETUP: {setup_name}
-📊 CONFIDENCE: {random.randint(92,98)}%
-
-🔍 WHY THIS TRADE GO {('BUY' if is_buy else 'SELL')}:
-{why}
-
-⚠️ RISK: 1% Only | Martingale 1 Step
-🎯 TAKE TRADE NOW FOR M1 CANDLE!
-
-🔗 TRADE NOW: {AFFILIATE_LINK}
-
-⭐ Enoch Pro 1-Min System""")
-        
+        await bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 ENTER NOW!!! REAL MARKET SIGNAL 🚀\n⏰ TIME: {now_time2} WAT (After 1 min wait)\n\n📊 PAIR: {pair}\n✅ REAL PRICE: {live2} (LIVE - Was {prev2})\n📋 DIRECTION: {direction}\n⏰ EXPIRY: 3 MINUTES [M3]\n📈 SETUP: {setup_name}\n📊 CONFIDENCE: {random.randint(92,98)}%\n\n🔍 WHY THIS TRADE GO {('BUY' if is_buy else 'SELL')}:\n{why}\n\n⚠️ RISK: 1% Only | Martingale 1 Step\n🎯 TAKE TRADE NOW FOR M1 CANDLE!\n\n🔗 TRADE NOW: {AFFILIATE_LINK}\n\n⭐ Enoch Pro 1-Min System")
     except Exception as e:
         print(f"Error: {e}")
 
@@ -140,3 +109,39 @@ async def session_runner(bot):
                 session_data["last_session"] = f"{today}_{cur}"
                 session_data["next_index"] = 0
             for sess in SESSIONS:
+                sh, sm = map(int, sess.split(":"))
+                s_start = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                s_end = s_start + timedelta(hours=1)
+                if s_start <= now <= s_end and session_data["next_index"] < len(PAIRS):
+                    await send_signal(PAIRS[session_data["next_index"]], bot)
+                    session_data["next_index"] += 1
+                    await asyncio.sleep(120)
+                    break
+        except Exception as e:
+            print(e)
+        await asyncio.sleep(20)
+
+async def post_init(app):
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    print("Full Button Pro Bot Ready")
+    asyncio.create_task(session_runner(app.bot))
+
+async def testsignal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if session_data["next_index"] >= len(PAIRS):
+        session_data["next_index"] = 0
+    pair = PAIRS[session_data["next_index"]]
+    await update.message.reply_text(f"✅ Testing FULL BUTTON + 1 MIN PRO for {pair}: PAIR TO WATCH now -> wait 60 secs -> ENTER NOW")
+    await send_signal(pair, context.bot)
+    session_data["next_index"] += 1
+
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.post_init = post_init
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("id", set_id))
+    app.add_handler(CommandHandler("testsignal", testsignal))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
+    main()
