@@ -1,172 +1,238 @@
-import os
-import asyncio
-import random
-import threading
-from datetime import datetime
-import pytz
+import os, asyncio, random, threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telegram.constants import ParseMode
 from flask import Flask
 
-# --- 1. WEBSITE FOR RENDER - FIXES "NO OPEN PORTS" ---
-app_flask = Flask(__name__)
-
-@app_flask.route('/')
-def home():
-    return "✅ Enoch Bot LIVE - 24/7 Working!"
-
+# --- FLASK FOR RENDER ---
+flask_app = Flask(__name__)
+@flask_app.route('/')
+def home(): return "✅ Enoch Bot LIVE - Private + Channel"
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app_flask.run(host='0.0.0.0', port=port)
+    flask_app.run(host='0.0.0.0', port=port)
 
-# --- 2. CONFIG - STRIP SPACE TO FIX "INVALID URL" ---
+# --- CONFIG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHANNEL_ID = os.getenv("CHANNEL_ID", "").strip()
 ADMIN_ID = os.getenv("ADMIN_ID", "").strip()
 POCKET_LINK = "https://pocket-friends.co/r/8vcvh8wte5"
 
-LAGOS = pytz.timezone("Africa/Lagos")
+PAIRS = ["EUR/USD","AUD/USD","USD/JPY","EUR/JPY","USD/CAD","USD/CHF","AUD/CAD","EUR/AUD","AUD/JPY","EUR/CAD"]
+BASE = {"EUR/USD":1.0845,"AUD/USD":0.6543,"USD/JPY":149.85,"EUR/JPY":162.35,"USD/CAD":1.3645,"USD/CHF":0.8845,"AUD/CAD":0.8920,"EUR/AUD":1.6580,"AUD/JPY":97.85,"EUR/CAD":1.4785}
+def get_price(p): return round(BASE.get(p,1.0845)+random.uniform(-0.0008,0.0008),5)
 
-# 10 PAIRS - NO GBP, NO GOLD
-PAIRS = ["EUR/USD", "AUD/USD", "USD/JPY", "EUR/JPY", "USD/CAD", "USD/CHF", "AUD/CAD", "EUR/AUD", "AUD/JPY", "EUR/CAD"]
-
-# Realistic base prices
-PRICES = {
-    "EUR/USD": 1.0845, "AUD/USD": 0.6543, "USD/JPY": 149.85,
-    "EUR/JPY": 162.35, "USD/CAD": 1.3645, "USD/CHF": 0.8845,
-    "AUD/CAD": 0.8920, "EUR/AUD": 1.6580, "AUD/JPY": 97.85, "EUR/CAD": 1.4785
-}
-
-def get_price(pair):
-    # Real price + small random movement - no need yfinance, no error
-    base = PRICES.get(pair, 1.0845)
-    move = random.uniform(-0.0008, 0.0008)
-    return round(base + move, 5)
-
-# --- PRIVATE BOT WITH BUTTONS ---
+# --- 1. PRIVATE BOT START ---
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Only for private chat
     keyboard = [
-        [InlineKeyboardButton("🔥 CREATE POCKET ACCOUNT", url=POCKET_LINK)],
-        [InlineKeyboardButton("🆔 HOW TO GET YOUR ID", callback_data="how_id")],
-        [InlineKeyboardButton("✅ START GETTING SIGNALS", callback_data="request")],
+        [InlineKeyboardButton("🔥 1️⃣ CREATE POCKET ACCOUNT", url=POCKET_LINK)],
+        [InlineKeyboardButton("🆔 2️⃣ HOW TO GET YOUR ID", callback_data="how_id")],
+        [InlineKeyboardButton("✅ 3️⃣ I HAVE ID - GET SIGNALS", callback_data="get_signals")],
     ]
     text = f"""
-👋 **WELCOME {update.effective_user.first_name} - ENOCH PRO** 👋
+👋 **WELCOME {update.effective_user.first_name} - ENOCH PRO VIP** 👋
 ━━━━━━━━━━━━━━━━━━━━━━
-🔥 10 PAIRS - NO GBP - 24/7
+🔥 You wan dey get signal every 5 mins?
 
-**3 STEPS TO JOIN:**
-1️⃣ Create account with my link
-2️⃣ Copy your ID (Profile -> ID)
-3️⃣ Send ID here - Admin go add you
+**FOLLOW 3 STEPS:**
 
-⏰ Signals every 5 mins - 24/7 non-stop!
-💹 Pairs: EUR/USD, AUD/USD etc (No GBP)
+**STEP 1️⃣:** Click CREATE POCKET ACCOUNT - Register with my link
+*(If you no use my link you no go get signal)*
 
-Click below 👇
+**STEP 2️⃣:** How to get your ID - Click button below to see
+
+**STEP 3️⃣:** After you get ID, click I HAVE ID and send your ID here
+
+⏰ Signal: Every 5 mins 24/7
+💹 10 Pairs - No GBP
+
+My Link: {POCKET_LINK}
+
+Click button below 👇
 ━━━━━━━━━━━━━━━━━━━━━━
 """
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
+# --- 2. BUTTON CLICK ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
     if query.data == "how_id":
-        await query.edit_message_text(f"🆔 **HOW TO GET ID**\n\n1. Register 👉 {POCKET_LINK}\n2. Login -> Profile Icon\n3. You go see ID: 12345678 -> Copy am\n4. Come back type am here like `87654321`", parse_mode=ParseMode.MARKDOWN)
-    elif query.data == "request":
-        await query.edit_message_text("✅ **SEND YOUR POCKET ID NOW**\n\nType am like: `87654321`\n\nSend am now!", parse_mode=ParseMode.MARKDOWN)
+        text = f"""
+🆔 **HOW TO GET YOUR POCKET ID - STEP BY STEP**
 
+**1.** First register with my link:
+👉 {POCKET_LINK}
+
+**2.** Login to Pocket Option App / Website
+
+**3.** Click on your **Profile Picture** for top right corner
+
+**4.** You go see your name and **ID: 12345678** - Na that ID be that
+
+**5.** Long press am to **COPY** am
+
+**6.** Come back to this bot and click **"I HAVE ID - GET SIGNALS"** then paste am
+
+**Example of ID:** `87654321` or `98472631` - Na 7 or 8 numbers
+
+After you send am, Admin go add you to VIP Channel!
+
+See video? Chat Admin.
+"""
+        kb = [
+            [InlineKeyboardButton("🔥 REGISTER NOW", url=POCKET_LINK)],
+            [InlineKeyboardButton("✅ I DON GET ID - SEND AM", callback_data="get_signals")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+
+    elif query.data == "get_signals":
+        await query.edit_message_text(
+            "✅ **SEND YOUR POCKET ID NOW**\n\nType your ID for here like this:\n\n`87654321`\n\nJust paste am and send. I go forward am to Admin make e add you to signal group!\n\nMake sure you don register with my link first: \n" + POCKET_LINK,
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+# --- 3. WHEN PERSON SEND ID ---
 async def handle_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pocket_id = update.message.text.strip()
-    if not pocket_id.isdigit() or len(pocket_id) < 5:
-        await update.message.reply_text("❌ ID no correct. Send like `87654321`")
+    # Ignore if message from channel
+    if update.effective_chat.type != "private":
         return
-    await update.message.reply_text(f"✅ **ID {pocket_id} RECEIVED!**\n\nWait small - Admin go verify and add you to VIP channel!\n\nYou use my link? {POCKET_LINK}")
-    # Notify admin
+        
+    pocket_id = update.message.text.strip()
+    
+    # If na command no be ID
+    if pocket_id.startswith("/"):
+        return
+
+    if not pocket_id.isdigit() or len(pocket_id) < 5:
+        await update.message.reply_text("❌ That ID no correct Oga. ID na only numbers like `87654321`. Check your Pocket Option profile again and send correct ID.")
+        return
+
+    await update.message.reply_text(f"""
+✅ **ID {pocket_id} DON RECEIVE!**
+
+🔥 Thank you!
+
+Your ID **{pocket_id}** don go meet Admin now.
+
+Admin go check if you register with my link:
+👉 {POCKET_LINK}
+
+If you use am, e go add you to **VIP Signal Channel** where signal dey drop every 5 mins!
+
+Wait small - You go get message once Admin don add you!
+
+God bless! 🙏
+""", parse_mode=ParseMode.MARKDOWN)
+
+    # Send to Admin
     if ADMIN_ID:
         try:
-            await context.bot.send_message(chat_id=int(ADMIN_ID), text=f"🔔 NEW USER: @{update.effective_user.username} ({update.effective_user.id})\nPocket ID: {pocket_id}\n/approve {update.effective_user.id}")
-        except:
-            pass
+            username = update.effective_user.username or update.effective_user.first_name
+            admin_msg = f"🔔 **NEW USER REQUEST**\n\n👤 User: @{username}\n🆔 Telegram ID: `{update.effective_user.id}`\n💰 Pocket ID: `{pocket_id}`\n\nTo approve am type:\n`/approve {update.effective_user.id}`"
+            await context.bot.send_message(chat_id=int(ADMIN_ID), text=admin_msg, parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            print(f"Admin send error {e}")
 
+# --- 4. ADMIN APPROVE ---
 async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(ADMIN_ID):
+        await update.message.reply_text("❌ You no be admin")
         return
     if not context.args:
         await update.message.reply_text("Use: /approve 123456789")
         return
+    target = context.args[0]
     try:
-        await context.bot.send_message(chat_id=int(context.args[0]), text="🎉 YOU DON BE APPROVED! Join VIP Channel now - Signals every 5 mins 24/7! 🚀")
-        await update.message.reply_text(f"✅ Approved {context.args[0]}")
+        await context.bot.send_message(chat_id=int(target), text=f"🎉 **YOU DON BE APPROVED!** 🎉\n\nYou don enter VIP Channel!\n\nSignal dey drop every 5 mins for 24/7!\n\nMake you join channel now and dey watch signal!\n\nTrade with 1-2% of your balance! Good luck 🚀\n\nMy Link: {POCKET_LINK}")
+        await update.message.reply_text(f"✅ Approved {target} - E don get message")
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
 
-# --- SIGNAL SENDER - 24/7 EVERY 5 MINS ---
+# --- 5. CHANNEL SIGNAL - SETUP + ENTER ---
 async def send_signal(bot):
     try:
         pair = random.choice(PAIRS)
         price = get_price(pair)
-        direction = random.choice(["CALL 🔼 BUY", "PUT 🔽 SELL"])
-        payout = random.randint(88, 96)
-        expiry = "1 MIN"
+        direction = random.choice(["CALL","PUT"])
+        payout = random.randint(88,96)
 
-        # SETUP
-        setup = f"🔍 **SETUP - {pair}**\n💹 Price: `{price}`\n💰 Payout: {payout}%\n⏳ Wait 60s... DO NOT ENTER YET"
-        sent = await bot.send_message(chat_id=int(CHANNEL_ID), text=setup, parse_mode=ParseMode.MARKDOWN)
-        print(f"SETUP {pair} {price}")
+        setup = f"""
+🔍 **SETUP - {pair}**
+━━━━━━━━━━━━━━
+💹 Price: `{price}`
+💰 Payout: {payout}%
+⏱️ Expiry: 1 MIN
+
+⚠️ **PREPARE - DO NOT ENTER YET**
+
+Waiting for confirmation...
+"""
+        await bot.send_message(chat_id=int(CHANNEL_ID), text=setup, parse_mode=ParseMode.MARKDOWN)
+        print(f"SETUP {pair}")
 
         await asyncio.sleep(60)
 
-        # ENTER
-        if "CALL" in direction:
-            emoji = "🟢📈"
+        if direction == "CALL":
+            enter = f"""
+🟢 **ENTER NOW - {pair}** 🟢
+━━━━━━━━━━━━━━
+💹 Entry: `{price}`
+🎯 **CALL 🔼 BUY**
+⏱️ 1 MIN
+💰 {payout}%
+
+✅ **ENTER NOW - BUY!**
+
+🔗 {POCKET_LINK}
+"""
         else:
-            emoji = "🔴📉"
+            enter = f"""
+🔴 **ENTER NOW - {pair}** 🔴
+━━━━━━━━━━━━━━
+💹 Entry: `{price}`
+🎯 **PUT 🔽 SELL**
+⏱️ 1 MIN
+💰 {payout}%
 
-        enter = f"{emoji} **ENTER NOW - {pair}** {emoji}\n━━━━━━━━━━━━\n💹 Entry: `{price}`\n🎯 {direction}\n⏱️ {expiry}\n💰 {payout}%\n\n✅ **ENTER NOW!**\n\n🔗 {POCKET_LINK}"
+✅ **ENTER NOW - SELL!**
+
+🔗 {POCKET_LINK}
+"""
         await bot.send_message(chat_id=int(CHANNEL_ID), text=enter, parse_mode=ParseMode.MARKDOWN)
-
-        await asyncio.sleep(180)
-        try:
-            await bot.delete_message(chat_id=int(CHANNEL_ID), message_id=sent.message_id)
-        except:
-            pass
+        print(f"ENTER {pair} {direction}")
 
     except Exception as e:
-        print(f"Signal error: {e}")
+        print(f"Signal error {e}")
 
 async def loop_manager(app):
-    await asyncio.sleep(10)
-    print("✅ BOT LIVE - 24/7 Every 5 mins - NO ERRORS")
+    await asyncio.sleep(15)
+    print("✅ BOT LIVE - Private + Channel")
     while True:
         try:
             await send_signal(app.bot)
-            await asyncio.sleep(300)  # 5 minutes
+            await asyncio.sleep(240)
         except Exception as e:
-            print(f"Loop: {e}")
+            print(f"Loop {e}")
             await asyncio.sleep(60)
 
 async def post_init(app):
     asyncio.create_task(loop_manager(app))
 
 def main():
-    # Start website
     threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Check token
     if not BOT_TOKEN or not CHANNEL_ID:
-        print("❌ ERROR: BOT_TOKEN or CHANNEL_ID missing!")
+        print("❌ BOT_TOKEN or CHANNEL_ID missing!")
         return
-
-    application = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
-    application.add_handler(CommandHandler("start", start_cmd))
-    application.add_handler(CommandHandler("approve", approve_cmd))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id))
-    
-    print("Starting bot... No conflict mode ON")
-    application.run_polling(drop_pending_updates=True)
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("approve", approve_cmd))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_id))
+    print("Starting... drop_pending_updates=True")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
